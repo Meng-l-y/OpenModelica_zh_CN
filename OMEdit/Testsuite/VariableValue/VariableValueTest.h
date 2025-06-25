@@ -32,26 +32,29 @@
  * @author Adeel Asghar <adeel.asghar@liu.se>
  */
 
-#ifndef UTILITIESTEST_H
-#define UTILITIESTEST_H
+#ifndef VARIABLEVALUETEST_H
+#define VARIABLEVALUETEST_H
 
 #include <QObject>
 
+#include "Modeling/Model.h"
+
 /*!
- * \brief The UtilitiesTest class
+ * \brief The VariableValue class
+ * Tests the variable value from model.
  */
-class UtilitiesTest: public QObject
+class VariableValueTest: public QObject
 {
   Q_OBJECT
-
 private slots:
-  void extractArrayParts();
-  void extractArrayParts_data();
-  void literalConstant();
-  void literalConstant_data();
-  void scalarLiteralConstant();
-  void scalarLiteralConstant_data();
+  void initTestCase();
+  /*!
+   * \brief variableValue
+   * Tests the variable value from model.
+   */
+  void variableValue();
+  void variableValue_data();
   void cleanupTestCase();
 };
 
-#endif // UTILITIESTEST_H
+#endif // VARIABLEVALUETEST_H
