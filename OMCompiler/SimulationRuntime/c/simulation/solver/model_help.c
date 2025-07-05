@@ -70,6 +70,8 @@ int nonlinearSparseSolverMinSize = DEFAULT_FLAG_NLSS_MIN_SIZE;
 double maxStepFactor = 1e12;
 double newtonXTol = 1e-12;
 double newtonFTol = 1e-12;
+int newtonMaxSteps = DEFAULT_FLAG_NEWTON_MAX_STEPS;
+int maxJacUpdate[4] = {10,3,1,1};
 double steadyStateTol = 1e-3;
 const size_t SIZERINGBUFFER = 3;
 int compiledInDAEMode = 0;
@@ -999,8 +1001,7 @@ void initializeDataStruc(DATA *data, threadData_t *threadData)
   /* RingBuffer */
   data->simulationData = 0;
   data->simulationData = allocRingBuffer(SIZERINGBUFFER, sizeof(SIMULATION_DATA));
-  if(!data->simulationData)
-  {
+  if (!data->simulationData) {
     throwStreamPrint(threadData, "Your memory is not strong enough for our ringbuffer!");
   }
 
@@ -1015,7 +1016,7 @@ void initializeDataStruc(DATA *data, threadData_t *threadData)
   assertStreamPrint(threadData, NULL != data->simulationInfo->stringVarsIndex, "out of memory");
 
   /* compute index map */
-  data->callback->computeVarIndices(data->simulationInfo->realVarsIndex, data->simulationInfo->integerVarsIndex, data->simulationInfo->booleanVarsIndex, data->simulationInfo->stringVarsIndex);
+  data->callback->computeVarIndices(data, data->simulationInfo->realVarsIndex, data->simulationInfo->integerVarsIndex, data->simulationInfo->booleanVarsIndex, data->simulationInfo->stringVarsIndex);
 
   /* compute scalar number of variables */
   data->modelData->nVariablesReal     = data->simulationInfo->realVarsIndex[data->modelData->nVariablesRealArray];
@@ -1024,8 +1025,7 @@ void initializeDataStruc(DATA *data, threadData_t *threadData)
   data->modelData->nVariablesString   = data->simulationInfo->stringVarsIndex[data->modelData->nVariablesStringArray];
 
   /* prepare RingBuffer */
-  for(i=0; i<SIZERINGBUFFER; i++)
-  {
+  for (i = 0; i < SIZERINGBUFFER; i++) {
     /* set time value */
     /*
     * fix issue #11855, always take the startTime provided in modeldescription.xml

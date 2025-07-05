@@ -46,6 +46,11 @@
 #include "../jacobian_util.h"
 #include "../../util/rtclock.h"
 
+/* forward declarations */
+int jacobian_SR_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian, JACOBIAN *parentJacobian);
+int jacobian_MR_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian, JACOBIAN *parentJacobian);
+int jacobian_IRK_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian, JACOBIAN *parentJacobian);
+
 /**
  * @brief Specific error handling of kinsol for gbode
  *
@@ -475,14 +480,12 @@ void get_kinsol_statistics(NLS_KINSOL_DATA* kin_mem)
 NLS_SOLVER_STATUS solveNLS_gb(DATA *data, threadData_t *threadData, NONLINEAR_SYSTEM_DATA* nlsData, DATA_GBODE* gbData)
 {
   struct dataSolver * solverData = (struct dataSolver *)nlsData->solverData;
-  NLS_SOLVER_STATUS solved;
+  NLS_SOLVER_STATUS solved = NLS_FAILED;
 
   // Debug nonlinear solution process
   rtclock_t clock;
   double cpu_time_used;
-  int numIter;
-
-  numIter = 20;
+  double newtonTol = fmax(newtonFTol, newtonXTol);
 
   if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) {
     rt_ext_tp_tick(&clock);
@@ -492,23 +495,37 @@ NLS_SOLVER_STATUS solveNLS_gb(DATA *data, threadData_t *threadData, NONLINEAR_SY
     // Get kinsol data object
     NLS_KINSOL_DATA* kin_mem = ((NLS_KINSOL_DATA*)solverData->ordinaryData)->kinsolMemory;
 
-    set_kinsol_parameters(kin_mem, numIter, SUNTRUE, 10, 100*DBL_EPSILON);
-    solved = solveNLS(data, threadData, nlsData);
-    /* Retry solution process with updated Jacobian */
-    if (!solved) {
-      infoStreamPrint(OMC_LOG_STDOUT, 0, "GBODE: Solution of NLS failed, Try with updated Jacobian at time %g. Number of Iterations %d", gbData->time, numIter);
-      set_kinsol_parameters(kin_mem, numIter, SUNFALSE, 10, 100*DBL_EPSILON);
+    if (maxJacUpdate[0] > 0) {
+      set_kinsol_parameters(kin_mem, newtonMaxSteps, SUNTRUE, maxJacUpdate[0], newtonTol);
       solved = solveNLS(data, threadData, nlsData);
-      if (!solved) {
-        infoStreamPrint(OMC_LOG_STDOUT, 0, "GBODE: Solution of NLS failed, Try with less accuracy.");
-        set_kinsol_parameters(kin_mem, numIter, SUNFALSE, 10, 1000*DBL_EPSILON);
-        solved = solveNLS(data, threadData, nlsData);
-      }
+      if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) get_kinsol_statistics(kin_mem);
     }
-    if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) get_kinsol_statistics(kin_mem);
+    if (!solved && maxJacUpdate[1] > 0) {
+      if (maxJacUpdate[0] > 0) 
+        infoStreamPrint(OMC_LOG_GBODE_NLS, 0, "GBODE: Solution of NLS failed. Try with updated Jacobian.");
+      set_kinsol_parameters(kin_mem, newtonMaxSteps, SUNFALSE, maxJacUpdate[1], newtonTol);
+      solved = solveNLS(data, threadData, nlsData);
+      if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) get_kinsol_statistics(kin_mem);
+    }
+    if (!solved && maxJacUpdate[2] > 0) {
+      infoStreamPrint(OMC_LOG_GBODE_NLS, 0, "GBODE: Solution of NLS failed, Try with old start value.");
+      memcpy(nlsData->nlsx, nlsData->nlsxOld,  nlsData->size*sizeof(modelica_real));
+      set_kinsol_parameters(kin_mem, newtonMaxSteps, SUNFALSE, maxJacUpdate[2], newtonTol);
+      solved = solveNLS(data, threadData, nlsData);
+      if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) get_kinsol_statistics(kin_mem);
+    }
+    if (!solved && maxJacUpdate[3] > 0) {
+      infoStreamPrint(OMC_LOG_STDOUT, 0, "GBODE: Solution of NLS failed, Try with less accuracy.");
+      set_kinsol_parameters(kin_mem, newtonMaxSteps, SUNFALSE, maxJacUpdate[3], 10*newtonTol);
+      solved = solveNLS(data, threadData, nlsData);
+      if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) get_kinsol_statistics(kin_mem);
+    }
   } else {
     solved = solveNLS(data, threadData, nlsData);
   }
+
+  if (solved)
+    infoStreamPrint(OMC_LOG_GBODE_NLS_V, 0, "GBODE: NLS solved.");
 
   if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) {
     cpu_time_used = rt_ext_tp_tock(&clock);
@@ -548,9 +565,13 @@ void residual_MS(RESIDUAL_USERDATA* userData, const double *xloc, double *res, c
   const int nStages = gbData->tableau->nStages;
 
   // Set states
+  for (i = 0; i < nStates; i++)
+    assertStreamPrint(threadData, !isnan(xloc[i]), "residual_MS: xloc is NAN");
   memcpy(sData->realVars, xloc, nStates*sizeof(modelica_real));
   // Evaluate right hand side of ODE
   gbode_fODE(data, threadData, &(gbData->stats.nCallsODE));
+  for (i = 0; i < nStates; i++)
+    assertStreamPrint(threadData, !isnan(fODE[i]), "residual_MS: fODE is NAN");
 
   // Evaluate residuals
   for (i = 0; i < nStates; i++) {
@@ -593,6 +614,7 @@ void residual_MS_MR(RESIDUAL_USERDATA* userData, const double *xloc, double *res
   // Set fast states
   // ph: are slow states interpolated and set correctly?
   for (ii = 0; ii < nFastStates; ii++) {
+    assertStreamPrint(threadData, !isnan(xloc[ii]), "residual_MS_MR: xloc is NAN");
     i = gbfData->fastStatesIdx[ii];
     sData->realVars[i] = xloc[ii];
   }
@@ -602,9 +624,10 @@ void residual_MS_MR(RESIDUAL_USERDATA* userData, const double *xloc, double *res
   // Evaluate residuals
   for (ii = 0; ii < nFastStates; ii++) {
     i = gbfData->fastStatesIdx[ii];
+    assertStreamPrint(threadData, !isnan(fODE[i]), "residual_MS_MR: fODE is NAN");
     res[ii] = gbfData->res_const[i]
               - xloc[ii] * gbfData->tableau->c[nStages-1]
-              + fODE[ i] * gbfData->tableau->b[nStages-1] * gbfData->stepSize;
+              + fODE[i]  * gbfData->tableau->b[nStages-1] * gbfData->stepSize;
   }
 }
 
@@ -636,15 +659,19 @@ void residual_DIRK(RESIDUAL_USERDATA* userData, const double *xloc, double *res,
   const int nStates = data->modelData->nStates;
   const int nStages = gbData->tableau->nStages;
   const int stage_  = gbData->act_stage;
+  const modelica_real fac = gbData->stepSize * gbData->tableau->A[stage_ * nStages + stage_];
 
   // Set states
+  for (i = 0; i < nStates; i++)
+    assertStreamPrint(threadData, !isnan(xloc[i]), "residual_DIRK: xloc is NAN");
   memcpy(sData->realVars, xloc, nStates*sizeof(double));
   // Evaluate right hand side of ODE
   gbode_fODE(data, threadData, &(gbData->stats.nCallsODE));
 
   // Evaluate residuals
   for (i = 0; i < nStates; i++) {
-    res[i] = gbData->res_const[i] - xloc[i] + gbData->stepSize * gbData->tableau->A[stage_ * nStages + stage_] * fODE[i];
+    assertStreamPrint(threadData, !isnan(fODE[i]), "residual_DIRK: fODE is NAN");
+    res[i] = gbData->res_const[i] - xloc[i] + fac * fODE[i];
   }
 
   if (OMC_ACTIVE_STREAM(OMC_LOG_GBODE_NLS)) {
@@ -660,7 +687,9 @@ void residual_DIRK(RESIDUAL_USERDATA* userData, const double *xloc, double *res,
  *
  * For the fast states:
  * Based on the Butcher tableau the following nonlinear residuals will be calculated:
- * res = f(tOld + c[i]*h, yOld + h*sum(A[i,j]*k[j], j=1..act_stage))
+ *   y[j] = yOld + h*sum(A[i,j]*k[j], j=1..act_stage)
+ *   res_const[j] = yOld + h*sum(A[i,j]*k[j], j=1..act_stage-1)
+ * res = res_const[j] - y[j] + f(tOld + c[i]*h, y[j])
  * When calling, the following is already calculated:
  *  sData->timeValue = tOld + c[i]*h
  *  res_const = yOld + h*sum(A[i,j]*k[j], j=1..act_stage-1)
@@ -689,6 +718,7 @@ void residual_DIRK_MR(RESIDUAL_USERDATA* userData, const double *xloc, double *r
   // Set fast states
   // ph: are slow states interpolated and set correctly?
   for (ii = 0; ii < nFastStates; ii++) {
+    assertStreamPrint(threadData, !isnan(xloc[ii]), "residual_DIRK_MR: xloc is NAN");
     i = gbfData->fastStatesIdx[ii];
     sData->realVars[i] = xloc[ii];
   }
@@ -698,6 +728,7 @@ void residual_DIRK_MR(RESIDUAL_USERDATA* userData, const double *xloc, double *r
   // Evaluate residuals
   for (ii = 0; ii < nFastStates; ii++) {
     i = gbfData->fastStatesIdx[ii];
+    assertStreamPrint(threadData, !isnan(fODE[i]), "residual_DIRK_MR: fODE is NAN");
     res[ii] = gbfData->res_const[i] - xloc[ii] + fac * fODE[i];
   }
 }
@@ -730,6 +761,9 @@ void residual_IRK(RESIDUAL_USERDATA* userData, const double *xloc, double *res, 
   const int nStates = data->modelData->nStates;
   int stage, stage_;
 
+  for (i = 0; i < nStages*nStates; i++)
+    assertStreamPrint(threadData, !isnan(xloc[i]), "residual_IRK: xloc is NAN");
+
   // Update the derivatives for current estimate of the states
   for (stage_ = 0; stage_ < nStages; stage_++) {
     /* Evaluate ODE for each stage_ */
@@ -737,6 +771,8 @@ void residual_IRK(RESIDUAL_USERDATA* userData, const double *xloc, double *res, 
       sData->timeValue = gbData->time + gbData->tableau->c[stage_] * gbData->stepSize;
       memcpy(sData->realVars, xloc + stage_ * nStates, nStates*sizeof(double));
       gbode_fODE(data, threadData, &(gbData->stats.nCallsODE));
+      for (i = 0; i < nStates; i++)
+        assertStreamPrint(threadData, !isnan(fODE[i]), "residual_IRK: fODE is NAN");
       memcpy(gbData->k + stage_ * nStates, fODE, nStates*sizeof(double));
     } else {
       // memcpy(sData->realVars, gbData->yLeft, nStates*sizeof(double));
@@ -782,8 +818,9 @@ int jacobian_SR_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian,
   const int stage = gbData->act_stage;
   modelica_real fac;
 
-  /* Evaluate column of Jacobian ODE */
   JACOBIAN* jacobian_ODE = &(data->simulationInfo->analyticJacobians[data->callback->INDEX_JAC_A]);
+
+  /* Evaluate column of Jacobian ODE */
   memcpy(jacobian_ODE->seedVars, jacobian->seedVars, sizeof(modelica_real)*jacobian->sizeCols);
   data->callback->functionJacA_column(data, threadData, jacobian_ODE, NULL);
 
@@ -795,6 +832,7 @@ int jacobian_SR_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian,
   }
 
   for (i = 0; i < jacobian->sizeCols; i++) {
+    assertStreamPrint(threadData, !isnan(jacobian_ODE->resultVars[i]), "jacobian_SR_column: jacobian_ODE is NAN");
     jacobian->resultVars[i] = fac * jacobian_ODE->resultVars[i] - jacobian->seedVars[i];
   }
 
@@ -848,6 +886,7 @@ int jacobian_MR_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian,
 
   for (ii = 0; ii < nFastStates; ii++) {
     i = gbData->fastStatesIdx[ii];
+    assertStreamPrint(threadData, !isnan(jacobian_ODE->resultVars[i]), "jacobian_MR_column: jacobian_ODE is NAN");
     jacobian->resultVars[ii] = fac * jacobian_ODE->resultVars[i] - jacobian->seedVars[ii];
   }
 
@@ -903,6 +942,8 @@ int jacobian_IRK_column(DATA* data, threadData_t *threadData, JACOBIAN *jacobian
 
   // call jacobian_ODE with the mapped seedVars
   data->callback->functionJacA_column(data, threadData, jacobian_ODE, NULL);
+  for (i = 0; i < nStates; i++)
+    assertStreamPrint(threadData, !isnan(jacobian_ODE->resultVars[i]), "jacobian_SR_column: jacobian_ODE is NAN");
 
   /* Update resultVars array for corresponding jacobian->seedVars*/
   for (stage = 0; stage < nStages; stage++) {

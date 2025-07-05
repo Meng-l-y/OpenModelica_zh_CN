@@ -62,7 +62,7 @@ void addSmultVec_gbf(double* a, double* b, double *c, double s, int nIdx, int* i
 }
 
 /**
- * @brief Scalar multiplication and vector addition a = b + s*c for selected indices.
+ * @brief Scalar multiplication and vector addition a = b + s*c.
  *
  * Determines the scalar multiplication of an vector and adds the result
  * to another vector.
@@ -371,8 +371,8 @@ double error_interpolation_gb(DATA_GBODE* gbData, int nIdx, int* idx, double tol
 void extrapolation_gbf(DATA_GBODE* gbData, double* nlsxExtrapolation, double time)
 {
   DATA_GBODEF* gbfData = gbData->gbfData;
-  int nStates = gbData->nStates;
-  int nFastStates = gbData->nFastStates;
+  const int nStates = gbData->nStates;
+  const int nFastStates = gbData->nFastStates;
 
   if (fabs(gbfData->tv[1]-gbfData->tv[0]) <= GBODE_EPSILON) {
     addSmultVec_gbf(nlsxExtrapolation, gbfData->yv, gbfData->kv, time - gbfData->tv[0], nFastStates, gbData->fastStatesIdx);
@@ -384,6 +384,24 @@ void extrapolation_gbf(DATA_GBODE* gbData, double* nlsxExtrapolation, double tim
                      time, nlsxExtrapolation,
                      nFastStates, gbData->fastStatesIdx, nStates, gbfData->tableau, gbfData->x, gbfData->k);
   }
+}
+
+/**
+ * @brief Extrapolation for all states.
+ *
+ * Using interpolation method specified in gbData->interpolation.
+ *
+ * @param gbData              Generic ODE solver data.
+ * @param nlsxExtrapolation   On output contains function values at extrapolation point time.
+ * @param time                Extrapolation time.
+ */
+void extrapolation_hermite_gb(double* nlsxExtrapolation, int nStates, double t0, double *x0, double* k0, double t1, double *x1, double* k1, double time)
+{
+  gb_interpolation(GB_INTERPOL_HERMITE,
+                   t0, x0,  k0,
+                   t1, x1,  k1,
+                   time, nlsxExtrapolation,
+                   nStates, NULL, nStates, NULL, NULL, NULL);
 }
 
 /**
