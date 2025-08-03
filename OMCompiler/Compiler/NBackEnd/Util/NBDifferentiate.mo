@@ -182,6 +182,7 @@ public
         DifferentiationArguments diffArguments;
         Tearing strict;
         Option<Tearing> casual;
+        Boolean linear;
 
       case StrongComponent.SINGLE_COMPONENT() algorithm
         new_var := differentiateVariablePointer(comp.var, diffArguments_ptr);
@@ -221,7 +222,9 @@ public
       case StrongComponent.ALGEBRAIC_LOOP() algorithm
         strict := differentiateTearing(comp.strict, diffArguments_ptr, idx, context, name);
         casual := Util.applyOption(comp.casual, function differentiateTearing(diffArguments_ptr=diffArguments_ptr, idx=idx, context=context, name=name));
-      then StrongComponent.ALGEBRAIC_LOOP(-1, strict, casual, comp.linear, false, comp.homotopy, comp.status);
+        // if we differentiate for jacobian, the algebraic loops will always be linear
+        linear := match Pointer.access(diffArguments_ptr) case DIFFERENTIATION_ARGUMENTS(diffType = NBDifferentiate.DifferentiationType.JACOBIAN) then true; else comp.linear; end match;
+      then StrongComponent.ALGEBRAIC_LOOP(-1, strict, casual, linear, false, comp.homotopy, comp.status);
 
       case StrongComponent.ENTWINED_COMPONENT() algorithm
         Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " not implemented for entwined equation:\n" + StrongComponent.toString(comp)});
@@ -616,7 +619,7 @@ public
       case _ guard(diffArguments.diffType == DifferentiationType.FUNCTION) then Pointer.create(NBVariable.DUMMY_VARIABLE);
       case Expression.CREF(cref = ComponentRef.EMPTY()) then Pointer.create(NBVariable.DUMMY_VARIABLE);
       case Expression.CREF(cref = ComponentRef.WILD())  then Pointer.create(NBVariable.DUMMY_VARIABLE);
-      case Expression.CREF() then BVariable.getVarPointer(exp.cref);
+      case Expression.CREF() then BVariable.getVarPointer(exp.cref, sourceInfo());
       else algorithm
         Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " failed for: " + Expression.toString(exp)});
       then fail();
@@ -796,7 +799,7 @@ public
     diff_ptr := match crefExp
       case Expression.CREF(cref = ComponentRef.EMPTY()) then Pointer.create(NBVariable.DUMMY_VARIABLE);
       case Expression.CREF(cref = ComponentRef.WILD())  then Pointer.create(NBVariable.DUMMY_VARIABLE);
-      case Expression.CREF() then BVariable.getVarPointer(crefExp.cref);
+      case Expression.CREF() then BVariable.getVarPointer(crefExp.cref, sourceInfo());
       else algorithm
         Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " failed for " + Variable.toString(var)
           + " because the result is expected to be a variable but turned out to be " + Expression.toString(crefExp) + "."});
@@ -1017,7 +1020,7 @@ public
 
       // Functions with one argument that differentiate "through"
       // d/dz f(x) -> f(dx/dz)
-      case (Expression.CALL()) guard(List.contains({"sum", "pre", "noEvent"}, name, stringEqual))
+      case (Expression.CALL()) guard(List.contains({"sum", "pre", "noEvent", "scalar", "vector", "matrix", "diagonal", "transpose", "symmetric", "skew"}, name, stringEqual))
       algorithm
         arg1 := match Call.arguments(exp.call)
           case {arg1} then arg1;
@@ -1130,7 +1133,6 @@ public
             Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " failed for: " + Expression.toString(exp) + "."});
           then fail();
         end match;
-
       then ret;
 
       // Builtin function call with one argument
@@ -1785,7 +1787,7 @@ public
       local
         Expression exp1, exp2, diffExp1, diffExp2, e1, e2, e3, res;
         Operator operator, addOp, mulOp, powOp;
-        Operator.SizeClassification sizeClass;
+        Operator.SizeClassification sizeClass, powSizeClass;
 
       // Addition calculations (ADD, ADD_EW, ...)
       // (f + g)' = f' + g'
@@ -1835,10 +1837,11 @@ public
           (diffExp2, diffArguments) := differentiateExpression(exp2, diffArguments);
           // create subtraction and multiplication operator from the size classification of original division operator
           (_, sizeClass) := Operator.classify(operator);
+          // the frontend treats multiplication equally for element and nen elementwise, but pow needs to have the correct operator
+          powSizeClass := if Type.isArray(Expression.typeOf(exp2)) then NFOperator.SizeClassification.ARRAY_SCALAR else NFOperator.SizeClassification.SCALAR;
           addOp := Operator.fromClassification((NFOperator.MathClassification.ADDITION, sizeClass), operator.ty);
           mulOp := Operator.fromClassification((NFOperator.MathClassification.MULTIPLICATION, sizeClass), operator.ty);
-          powOp := Operator.fromClassification((NFOperator.MathClassification.POWER,
-            Operator.combineSizeClassification(sizeClass, NFOperator.SizeClassification.SCALAR)), operator.ty);
+          powOp := Operator.fromClassification((NFOperator.MathClassification.POWER, powSizeClass), operator.ty);
       then (Expression.MULTARY(
               {Expression.MULTARY(
                 {Expression.BINARY(exp1, mulOp, diffExp2)},              // fg'
@@ -1920,7 +1923,7 @@ public
         list<Expression> inv_arguments, new_inv_arguments = {};
         list<Expression> diff_arguments, diff_inv_arguments;
         Operator operator, addOp, powOp;
-        Operator.SizeClassification sizeClass;
+        Operator.SizeClassification sizeClass, powSizeClass;
 
       // Dash calculations (ADD, SUB, ADD_EW, SUB_EW, ...)
       // NOTE: Multary always contains ADDITION
@@ -1966,9 +1969,10 @@ public
         algorithm
           // create addition and power operator
           (_, sizeClass) := Operator.classify(operator);
+          // the frontend treats multiplication equally for element and nen elementwise, but pow needs to have the correct operator
+          powSizeClass := if Type.isArray(Expression.typeOf(listHead(inv_arguments))) then NFOperator.SizeClassification.ARRAY_SCALAR else NFOperator.SizeClassification.SCALAR;
           addOp := Operator.fromClassification((NFOperator.MathClassification.ADDITION, sizeClass), operator.ty);
-          powOp := Operator.fromClassification((NFOperator.MathClassification.POWER,
-            Operator.combineSizeClassification(sizeClass, NFOperator.SizeClassification.SCALAR)), operator.ty);
+          powOp := Operator.fromClassification((NFOperator.MathClassification.POWER, powSizeClass), operator.ty);
           // f'
           (diff_arguments, diffArguments) := differentiateMultaryMultiplicationArgs(arguments, diffArguments, operator);
           diff_enumerator := Expression.MULTARY(diff_arguments, {}, addOp);
@@ -2035,7 +2039,7 @@ public
          DIFFERENTIATION_ARGUMENTS(diff_map = SOME(diff_map), diffType = DifferentiationType.JACOBIAN))
         guard(UnorderedMap.contains(BVariable.getVarName(residualVar), diff_map))
         algorithm
-          diffedResidualVar := BVariable.getVarPointer(UnorderedMap.getOrFail(BVariable.getVarName(residualVar), diff_map));
+          diffedResidualVar := BVariable.getVarPointer(UnorderedMap.getOrFail(BVariable.getVarName(residualVar), diff_map), sourceInfo());
           attr.residualVar := SOME(diffedResidualVar);
       then attr;
 
