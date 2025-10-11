@@ -450,7 +450,7 @@ protected
     end match;
     pre_cref := getPreVar(state_cref, state_var, acc_previous, scalarized);
     if not scalarized then
-      pre_cref := ComponentRef.setSubscriptsList(listReverse(ComponentRef.subscriptsAll(state_cref)), pre_cref);
+      pre_cref := ComponentRef.copySubscripts(state_cref, pre_cref);
     end if;
     new_exp := Expression.fromCref(pre_cref);
     if negated then
@@ -585,7 +585,7 @@ protected
       if not scalarized then
         // prevent the created pre variable from having the subscripts, but add it to the pre_cref
         (pre_cref, pre_var) := BVariable.makePreVar(ComponentRef.stripSubscriptsAll(var_cref));
-        pre_cref := ComponentRef.setSubscriptsList(listReverse(ComponentRef.subscriptsAll(var_cref)), pre_cref);
+        pre_cref := ComponentRef.copySubscripts(var_cref, pre_cref);
       else
         (pre_cref, pre_var) := BVariable.makePreVar(var_cref);
       end if;
@@ -657,11 +657,11 @@ protected
     _ := match (BVariable.getVarKind(BVariable.getVarPointer(lhs, sourceInfo())), BVariable.getVarKind(BVariable.getVarPointer(rhs, sourceInfo())))
       // a = der(b)
       case (_, VariableKind.STATE_DER(state = state)) algorithm
-        UnorderedMap.add(BVariable.getVarName(state), lhs, state_order);
+        UnorderedMap.add(BVariable.getVarName(state), ComponentRef.stripSubscriptsAll(lhs), state_order);
       then ();
       // der(b) = a
       case (VariableKind.STATE_DER(state = state), _) algorithm
-        UnorderedMap.add(BVariable.getVarName(state), rhs, state_order);
+        UnorderedMap.add(BVariable.getVarName(state), ComponentRef.stripSubscriptsAll(rhs), state_order);
       then ();
       else ();
     end match;

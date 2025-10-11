@@ -575,7 +575,7 @@ public
     if isSome(partner) then
       partner_cref := getVarName(Util.getOption(partner));
       if not scalarized then
-        partner_cref := ComponentRef.mergeSubscripts(listReverse(ComponentRef.subscriptsAllFlat(cref)), partner_cref, true, true);
+        partner_cref := ComponentRef.copySubscripts(cref, partner_cref);
       end if;
     else
       Error.addMessage(Error.INTERNAL_ERROR,
@@ -986,7 +986,7 @@ public
           var.backendinfo := BackendInfo.setVarKind(var.backendinfo, VariableKind.STATE_DER(state, NONE()));
           (var_ptr, der_cref) := makeVarPtrCyclic(var, der_cref);
           if not scalarized then
-            der_cref := ComponentRef.setSubscriptsList(listReverse(ComponentRef.subscriptsAll(cref)), der_cref);
+            der_cref := ComponentRef.copySubscripts(cref, der_cref);
           end if;
       then ();
 
@@ -1073,7 +1073,7 @@ public
   algorithm
     subscripts    := ComponentRef.subscriptsAllFlat(cref);
     arg_children  := BVariable.getRecordChildren(getVarPointer(cref, sourceInfo()));
-    children      := list(ComponentRef.mergeSubscripts(subscripts, getVarName(child)) for child in arg_children);
+    children      := list(ComponentRef.mergeSubscripts(subscripts, getVarName(child), true, true) for child in arg_children);
   end getRecordChildrenCref;
 
   function getRecordChildrenCrefOrSelf
@@ -1256,19 +1256,25 @@ public
   end makePDerVar;
 
   function makeFDerVar
-      "Creates a function derivative cref. Used in NBDifferentiation
-    for differentiating body vars of a function."
+    "Creates a function derivative cref. Used in NBDifferentiation
+    for differentiating body vars of a function (crefs are not lowered and only known locally).
+    prepend the funcion derivative name and use the string representation of the cref
+    for interface reasons they have to be a single cref without restCref (gets converted to InstNode)"
     input output ComponentRef cref    "old component reference to new component reference";
   algorithm
     cref := match ComponentRef.node(cref)
       local
         InstNode qual;
 
-      // for function differentiation (crefs are not lowered and only known locally)
+      // inside a function body
       case qual as InstNode.COMPONENT_NODE() algorithm
-        // prepend the funcion derivative name and use the string representation of the cref
-        // for interface reasons they have to be a single cref without restCref (gets converted to InstNode)
-        qual.name := FUNCTION_DERIVATIVE_STR + "_" + ComponentRef.toString(cref);
+        qual.name := BackendUtil.makeFDerString(ComponentRef.toString(cref));
+        cref := ComponentRef.fromNode(qual, ComponentRef.nodeType(cref));
+      then cref;
+
+      // partial function application (passing function pointers)
+      case qual as InstNode.CLASS_NODE() algorithm
+        qual.name := BackendUtil.makeFDerString(ComponentRef.toString(cref));
         cref := ComponentRef.fromNode(qual, ComponentRef.nodeType(cref));
       then cref;
 
@@ -1526,7 +1532,7 @@ public
       b := Expression.isLiteral(binding);
       if not b then
         // try to extract literal from array constructor (use dummy map, there should not be any new iterators)
-        (_, binding) := Iterator.extract(binding, UnorderedSet.new(BVariable.hash, BVariable.equalName));
+        (_, binding) := Iterator.extract(binding);
         binding := SimplifyExp.simplifyDump(binding, true, getInstanceName());
         b := Expression.isLiteral(Ceval.tryEvalExp(binding));
       end if;
@@ -1980,7 +1986,7 @@ public
       ComponentRef. Fails if the component ref cannot be found."
       input VariablePointers variables;
       input ComponentRef cref;
-      input Boolean report = true;
+      input Option<SourceInfo> info = NONE();
       output Pointer<Variable> var_ptr;
     protected
       Integer index;
@@ -1988,8 +1994,8 @@ public
       var_ptr := match UnorderedMap.get(cref, variables.map)
         case SOME(index) guard(index > 0) then ExpandableArray.get(index, variables.varArr);
         else algorithm
-          if report then
-            Error.addMessage(Error.INTERNAL_ERROR,{getInstanceName() + " failed for " + ComponentRef.toString(cref)});
+          if Util.isSome(info) then
+            Error.addInternalError(getInstanceName() + " failed for " + ComponentRef.toString(cref), Util.getOption(info));
           end if;
         then fail();
       end match;

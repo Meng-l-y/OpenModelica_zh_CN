@@ -1051,6 +1051,7 @@ function dumpJSONInstanceTree
   input InstNode scope;
   input Boolean root = true;
   input Boolean isDeleted = false;
+  input Boolean isExtends = false;
   output JSON json = JSON.makeNull();
 protected
   InstNode node;
@@ -1065,7 +1066,7 @@ algorithm
   def := InstNode.definition(node);
   cmt := SCodeUtil.getElementComment(def);
 
-  json := JSON.addPair("name", dumpJSONNodePath(node), json);
+  json := JSON.addPair("name", dumpJSONNodePath(node, not isExtends), json);
 
   json := JSON.addPairNotNull("dims", dumpJSONClassDims(node, def), json);
   json := JSON.addPair("restriction",
@@ -1167,7 +1168,8 @@ end dumpJSONInstanceAnnotationExtends;
 
 function dumpJSONNodePath
   input InstNode node;
-  output JSON json = dumpJSONPath(InstNode.fullPath(node, ignoreBaseClass = true));
+  input Boolean ignoreBaseClass = false;
+  output JSON json = dumpJSONPath(InstNode.enclosingScopePath(node, ignoreBaseClass = ignoreBaseClass));
 end dumpJSONNodePath;
 
 function dumpJSONNodeEnclosingPath
@@ -1234,7 +1236,7 @@ algorithm
   if Class.isOnlyBuiltin(cls) and not Class.isEnumeration(cls) then
     json := JSON.addPair("baseClass", JSON.makeString(InstNode.name(node)), json);
   else
-    json := JSON.addPair("baseClass", dumpJSONInstanceTree(ext, node, root = false, isDeleted = isDeleted), json);
+    json := JSON.addPair("baseClass", dumpJSONInstanceTree(ext, node, root = false, isDeleted = isDeleted, isExtends = true), json);
   end if;
 end dumpJSONExtends;
 
@@ -2746,6 +2748,7 @@ function updateMovedPath
   input MoveEnv env;
 protected
   Absyn.Path qualified_path;
+  Option<Absyn.Path> opt_path;
 algorithm
   // Try to look up the qualified path needed to be able to find the name in
   // this scope even if the root class that contains the scope is moved elsewhere.
@@ -2764,10 +2767,14 @@ algorithm
     if AbsynUtil.pathIsQual(qualified_path) then
       // If the path is qualified it needs to be joined with the original path,
       // but we remove any part of the path that's the same as the destination.
-      qualified_path := AbsynUtil.pathStripSamePrefix(qualified_path, env.destinationPath);
+      opt_path := AbsynUtil.pathStripSamePrefix(qualified_path, env.destinationPath);
 
-      if AbsynUtil.pathIsQual(qualified_path) then
-        path := AbsynUtil.joinPaths(AbsynUtil.pathPrefix(qualified_path), path);
+      if isSome(opt_path) then
+        SOME(qualified_path) := opt_path;
+
+        if AbsynUtil.pathIsQual(qualified_path) then
+          path := AbsynUtil.joinPaths(AbsynUtil.pathPrefix(qualified_path), path);
+        end if;
       end if;
     elseif AbsynUtil.pathFirstIdent(qualified_path) == AbsynUtil.pathFirstIdent(env.destinationPath) then
       // Special case, the path refers to the destination package, e.g. moving path A.B.C into A.
@@ -2856,6 +2863,7 @@ function updateMovedCref
   input MoveEnv env;
 protected
   Absyn.Path qualified_path;
+  Option<Absyn.Path> opt_path;
 algorithm
   if AbsynUtil.crefIsFullyQualified(cref) or AbsynUtil.crefIsWild(cref) then
     return;
@@ -2878,10 +2886,14 @@ algorithm
     if AbsynUtil.pathIsQual(qualified_path) then
       // If the path is qualified it needs to be joined with the original cref,
       // but we remove any part of the path that's the same as the destination.
-      qualified_path := AbsynUtil.pathStripSamePrefix(qualified_path, env.destinationPath);
+      opt_path := AbsynUtil.pathStripSamePrefix(qualified_path, env.destinationPath);
 
-      if AbsynUtil.pathIsQual(qualified_path) then
-        cref := AbsynUtil.joinCrefs(AbsynUtil.pathToCref(AbsynUtil.pathPrefix(qualified_path)), cref);
+      if isSome(opt_path) then
+        SOME(qualified_path) := opt_path;
+
+        if AbsynUtil.pathIsQual(qualified_path) then
+          cref := AbsynUtil.joinCrefs(AbsynUtil.pathToCref(AbsynUtil.pathPrefix(qualified_path)), cref);
+        end if;
       end if;
     elseif AbsynUtil.pathFirstIdent(qualified_path) == AbsynUtil.pathFirstIdent(env.destinationPath) then
       // Special case, the cref refers to the destination package, e.g. moving path A.B.C into A.

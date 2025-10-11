@@ -79,8 +79,6 @@ const char *FLAG_NAME[FLAG_MAX+1] = {
   /* FLAG_IIM */                          "iim",
   /* FLAG_IIT */                          "iit",
   /* FLAG_ILS */                          "ils",
-  /* FLAG_IMPRK_ORDER */                  "impRKOrder",
-  /* FLAG_IMPRK_LS */                     "impRKLS",
   /* FLAG_INITIAL_STEP_SIZE */            "initialStepSize",
   /* FLAG_INPUT_CSV */                    "csvInput",
   /* FLAG_INPUT_FILE_STATES */            "stateFile",
@@ -109,6 +107,10 @@ const char *FLAG_NAME[FLAG_MAX+1] = {
   /* FLAG_MAX_ORDER */                    "maxIntegrationOrder",
   /* FLAG_MAX_STEP_SIZE */                "maxStepSize",
   /* FLAG_MEASURETIMEPLOTFORMAT */        "measureTimePlotFormat",
+  /* FLAG_MOO_OPTIMIZATION */             "moo",
+  /* FLAG_MOO_L2BN_P1_ITERATIONS */       "moo_l2bn_p1_it",
+  /* FLAG_MOO_L2BN_P2_ITERATIONS */       "moo_l2bn_p2_it",
+  /* FLAG_MOO_L2BN_P2_LEVEL */            "moo_l2bn_p2_lvl",
   /* FLAG_NEWTON_FTOL */                  "newtonFTol",
   /* FLAG_NEWTON_MAX_STEPS */             "newtonMaxSteps",
   /* FLAG_NEWTON_MAX_STEP_FACTOR */       "newtonMaxStepFactor",
@@ -145,6 +147,8 @@ const char *FLAG_NAME[FLAG_MAX+1] = {
   /* FLAG_DATA_RECONCILE_STATE */         "reconcileState",
   /* FLAG_SR */                           "gbm",
   /* FLAG_SR_CTRL */                      "gbctrl",
+  /* FLAG_SR_CTRL_FILTER */               "gbctrl_filter",
+  /* FLAG_SR_CTRL_FHR */                  "gbctrl_fhr",
   /* FLAG_SR_ERR */                       "gberr",
   /* FLAG_SR_INT */                       "gbint",
   /* FLAG_SR_NLS */                       "gbnls",
@@ -217,8 +221,6 @@ const char *FLAG_DESC[FLAG_MAX+1] = {
   /* FLAG_IIM */                          "value specifies the initialization method",
   /* FLAG_IIT */                          "[double] value specifies a time for the initialization of the model",
   /* FLAG_ILS */                          "[int (default 3)] number of lambda steps for homotopy methods",
-  /* FLAG_IMPRK_ORDER */                  "[int (default 5)] value specifies the integration order of the implicit Runge-Kutta method. Valid values: 1-6",
-  /* FLAG_IMPRK_LS */                     "selects the linear solver of the integration methods: impeuler, trapezoid and imprungekuta",
   /* FLAG_INITIAL_STEP_SIZE */            "value specifies an initial step size for supported solver",
   /* FLAG_INPUT_CSV */                    "value specifies an csv-file with inputs for the simulation/optimization of the model",
   /* FLAG_INPUT_FILE_STATES */            "value specifies an file with states start values for the optimization of the model",
@@ -247,6 +249,10 @@ const char *FLAG_DESC[FLAG_MAX+1] = {
   /* FLAG_MAX_ORDER */                    "value specifies maximum integration order for supported solver",
   /* FLAG_MAX_STEP_SIZE */                "value specifies maximum absolute step size for supported solver",
   /* FLAG_MEASURETIMEPLOTFORMAT */        "value specifies the output format of the measure time functionality",
+  /* FLAG_MOO_OPTIMIZATION */             "perform dynamic optimization with MOO library",
+  /* FLAG_MOO_L2BN_P1_ITERATIONS */       "[int default: 0] value specifies the number of phase I iterations (full bisections) for L2-Boundary-Norm mesh refinement in MOO",
+  /* FLAG_MOO_L2BN_P2_ITERATIONS */       "[int default: 0] value specifies the number of phase II iterations (refinement) for L2-Boundary-Norm mesh refinement in MOO",
+  /* FLAG_MOO_L2BN_P2_LEVEL */            "[real default: 0.0] value specifies the phase II refinement aggressiveness for L2-Boundary-Norm mesh refinement in MOO",
   /* FLAG_NEWTON_FTOL */                  "[double (default 1e-12)] tolerance respecting residuals for updating solution vector in Newton solver",
   /* FLAG_NEWTON_MAX_STEPS */             "[int (default " EXPANDSTRING(DEFAULT_FLAG_NEWTON_MAX_STEPS) ")] maximal number of Newton steps used in GBODE",
   /* FLAG_NEWTON_MAX_STEP_FACTOR */       "[double (default 1e12)] maximum newton step factor mxnewtstep = maxStepFactor * norm2(xScaling). Used currently only by KINSOL.",
@@ -283,6 +289,8 @@ const char *FLAG_DESC[FLAG_MAX+1] = {
   /* FLAG_DATA_RECONCILE_STATE */         "Run the State Estimation numerical computation algorithm for constrained equations",
   /* FLAG_SR */                           "Value specifies the chosen solver of solver gbode (single-rate, slow states integrator)",
   /* FLAG_SR_CTRL */                      "Step size control of solver gbode (single-rate, slow states integrator)",
+  /* FLAG_SR_CTRL_FILTER */               "Applies exponential smoothing to the step size factor; gbctrl_filter = 0 yields constant step size, gbctrl_filter = 1 uses full adaptation without averaging.",
+  /* FLAG_SR_CTRL_FHR */                  "Applies adaptive damping to the step size factor using Führer’s approach, scaling it by h_fac *= (h_n / h_n1)^gamma to penalize repeated rejections or reward successful step acceptance.",
   /* FLAG_SR_ERR */                       "Error estimation method for solver gbode (single-rate, slow states integrator).",
   /* FLAG_SR_INT */                       "Interpolation method of solver gbode (single-rate, slow states integrator)",
   /* FLAG_SR_NLS */                       "Non-linear solver method of solver gbode (single-rate, slow states integrator)",
@@ -424,12 +432,6 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   /* FLAG_ILS */
   "  Value specifies the number of steps for homotopy method (required: -iim=symbolic).\n"
   "  The value is an Integer with default value 3.",
-  /* FLAG_IMPRK_ORDER */
-  "  Value specifies the integration order of the implicit Runge-Kutta method. Valid values: 1 to 6. Default order is 5.",
-  /* FLAG_IMPRK_LS */
-  "  Selects the linear solver of the integration methods impeuler, trapezoid and imprungekuta:\n\n"
-  "  * iterativ - default, sparse iterativ linear solver with fallback case to dense solver\n"
-  "  * dense - dense linear solver, SUNDIALS default method",
   /* FLAG_INITIAL_STEP_SIZE */
   "  Value specifies an initial step size, used by the methods: dassl, ida, gbode",
   /* FLAG_INPUT_CSV */
@@ -504,6 +506,14 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   "  * ps\n"
   "  * gif\n"
   "  * ...",
+  /* FLAG_MOO_OPTIMIZATION */
+  "  Perform dynamic optimization with MOO library",
+  /* FLAG_MOO_L2BN_P1_ITERATIONS */
+  "  Value specifies the number of phase I iterations (full bisections) for L2-Boundary-Norm mesh refinement in MOO",
+  /* FLAG_MOO_L2BN_P2_ITERATIONS */
+  "  Value specifies the number of phase II iterations (refinement) for L2-Boundary-Norm mesh refinement in MOO",
+  /* FLAG_MOO_L2BN_P2_LEVEL */
+  "  Value specifies the phase II refinement aggressiveness for L2-Boundary-Norm mesh refinement in MOO",
   /* FLAG_NEWTON_FTOL */
   "  Tolerance respecting residuals for updating solution vector in Newton solver.\n"
   "  Solution is accepted if the (scaled) 2-norm of the residuals is smaller than the tolerance newtonFTol and the (scaled) newton correction (delta_x) is smaller than the tolerance newtonXTol.\n"
@@ -598,6 +608,10 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   "  Value specifies the chosen solver of solver gbode (single-rate, slow states integrator).",
   /* FLAG_SR_CTRL */
   "  Step size control of solver gbode (single-rate, slow states integrator).",
+  /* FLAG_SR_CTRL_FILTER */
+  "  Applies exponential smoothing to the step size factor; gbctrl_filter = 0 yields constant step size, gbctrl_filter = 1 uses full adaptation without averaging.",
+  /* FLAG_SR_CTRL_FHR */
+  "  Applies adaptive damping to the step size factor using Führer’s approach, scaling it by h_fac *= (h_n / h_n1)^gamma to penalize repeated rejections or reward successful step acceptance.",
   /* FLAG_SR_ERR */
   "  Error estimation method for solver gbode (single-rate, slow states integrator)\n"
   "  Possible values:\n\n"
@@ -646,6 +660,7 @@ const char *FLAG_DETAILED_DESC[FLAG_MAX+1] = {
   "  Shows all warnings even if a related log-stream is inactive.",
   /* FLAG_PARMODNUMTHREADS */
   "  Value specifies the number of threads for simulation using parmodauto. If not specified (or is 0) it will use the systems max number of threads. Note that this option is ignored if the model is not compiled with --parmodauto",
+
 
   "FLAG_MAX"
 };
@@ -699,8 +714,6 @@ const flag_repeat_policy FLAG_REPEAT_POLICIES[FLAG_MAX] = {
   /* FLAG_IIM */                          FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_IIT */                          FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_ILS */                          FLAG_REPEAT_POLICY_FORBID,
-  /* FLAG_IMPRK_ORDER */                  FLAG_REPEAT_POLICY_FORBID,
-  /* FLAG_IMPRK_LS */                     FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_INITIAL_STEP_SIZE */            FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_INPUT_CSV */                    FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_INPUT_FILE_STATES */            FLAG_REPEAT_POLICY_FORBID,
@@ -729,6 +742,10 @@ const flag_repeat_policy FLAG_REPEAT_POLICIES[FLAG_MAX] = {
   /* FLAG_MAX_ORDER */                    FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_MAX_STEP_SIZE */                FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_MEASURETIMEPLOTFORMAT */        FLAG_REPEAT_POLICY_FORBID,
+  /* FLAG_MOO_OPTIMIZATION */             FLAG_REPEAT_POLICY_FORBID,
+  /* FLAG_MOO_L2BN_P1_ITERATIONS */       FLAG_REPEAT_POLICY_FORBID,
+  /* FLAG_MOO_L2BN_P2_ITERATIONS */       FLAG_REPEAT_POLICY_FORBID,
+  /* FLAG_MOO_L2BN_P2_LEVEL */            FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_NEWTON_FTOL */                  FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_NEWTON_MAX_STEPS */             FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_NEWTON_MAX_STEP_FACTOR */       FLAG_REPEAT_POLICY_FORBID,
@@ -765,6 +782,8 @@ const flag_repeat_policy FLAG_REPEAT_POLICIES[FLAG_MAX] = {
   /* FLAG_DATA_RECONCILE_STATE  */        FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_SR */                           FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_SR_CTRL */                      FLAG_REPEAT_POLICY_FORBID,
+  /* FLAG_SR_CTRL_FILTER */               FLAG_REPEAT_POLICY_FORBID,
+  /* FLAG_SR_CTRL_FHR */                  FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_SR_ERR */                       FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_SR_INT */                       FLAG_REPEAT_POLICY_FORBID,
   /* FLAG_SR_NLS */                       FLAG_REPEAT_POLICY_FORBID,
@@ -836,8 +855,6 @@ const int FLAG_TYPE[FLAG_MAX] = {
   /* FLAG_IIM */                          FLAG_TYPE_OPTION,
   /* FLAG_IIT */                          FLAG_TYPE_OPTION,
   /* FLAG_ILS */                          FLAG_TYPE_OPTION,
-  /* FLAG_IMPRK_LS */                     FLAG_TYPE_OPTION,
-  /* FLAG_IMPRK_ORDER */                  FLAG_TYPE_OPTION,
   /* FLAG_INITIAL_STEP_SIZE */            FLAG_TYPE_OPTION,
   /* FLAG_INPUT_CSV */                    FLAG_TYPE_OPTION,
   /* FLAG_INPUT_FILE_STATES */            FLAG_TYPE_OPTION,
@@ -866,6 +883,10 @@ const int FLAG_TYPE[FLAG_MAX] = {
   /* FLAG_MAX_ORDER */                    FLAG_TYPE_OPTION,
   /* FLAG_MAX_STEP_SIZE */                FLAG_TYPE_OPTION,
   /* FLAG_MEASURETIMEPLOTFORMAT */        FLAG_TYPE_OPTION,
+  /* FLAG_MOO_OPTIMIZATION */             FLAG_TYPE_FLAG,
+  /* FLAG_MOO_L2BN_P1_ITERATIONS */       FLAG_TYPE_OPTION,
+  /* FLAG_MOO_L2BN_P2_ITERATIONS */       FLAG_TYPE_OPTION,
+  /* FLAG_MOO_L2BN_P2_LEVEL */            FLAG_TYPE_OPTION,
   /* FLAG_NEWTON_FTOL */                  FLAG_TYPE_OPTION,
   /* FLAG_NEWTON_MAX_STEPS */             FLAG_TYPE_OPTION,
   /* FLAG_NEWTON_MAX_STEP_FACTOR */       FLAG_TYPE_OPTION,
@@ -902,6 +923,8 @@ const int FLAG_TYPE[FLAG_MAX] = {
   /* FLAG_DATA_RECONCILE_STATE */         FLAG_TYPE_FLAG,
   /* FLAG_SR */                           FLAG_TYPE_OPTION,
   /* FLAG_SR_CTRL */                      FLAG_TYPE_OPTION,
+  /* FLAG_SR_CTRL_FILTER */               FLAG_TYPE_OPTION,
+  /* FLAG_SR_CTRL_FHR */                  FLAG_TYPE_FLAG,
   /* FLAG_SR_ERR */                       FLAG_TYPE_OPTION,
   /* FLAG_SR_INT */                       FLAG_TYPE_OPTION,
   /* FLAG_SR_NLS */                       FLAG_TYPE_OPTION,
@@ -1034,19 +1057,27 @@ const char *GB_NLS_METHOD_DESC[GB_NLS_MAX] = {
 };
 
 const char *GB_CTRL_METHOD_NAME[GB_CTRL_MAX] = {
-  /* GB_CTRL_UNKNOWN */   "unknown",
-  /* GB_CTRL_I */         "i",
-  /* GB_CTRL_PI */        "pi",
-  /* GB_CTRL_PID */       "pid",
-  /* GB_CTRL_CNST */      "const"
+  /* GB_CTRL_UNKNOWN */         "unknown",
+  /* GB_CTRL_I */               "i",
+  /* GB_CTRL_PI_33 */           "pi_33",
+  /* GB_CTRL_PI_34 */           "pi_34",
+  /* GB_CTRL_PI_42 */           "pi_42",
+  /* GB_CTRL_PID_H312 */        "pid_h312",
+  /* GB_CTRL_PID_SOEDERLIND */  "pid_soederlind",
+  /* GB_CTRL_PID_STIFF */       "pid_stiff",
+  /* GB_CTRL_CNST */            "const"
 };
 
 const char *GB_CTRL_METHOD_DESC[GB_CTRL_MAX] = {
-  /* GB_CTRL_UNKNOWN */   "unknown",
-  /* GB_CTRL_I */         "I controller for step size",
-  /* GB_CTRL_PI */        "PI controller for step size",
-  /* GB_CTRL_PID */       "PID controller for step size",
-  /* GB_CTRL_CNST */      "Constant step size"
+  /* GB_CTRL_UNKNOWN */         "unknown",
+  /* GB_CTRL_I */               "I controller for step size (beta=1/k, k RK error order)",
+  /* GB_CTRL_PI_33 */           "PI controller for step size (beta1=0.7/k, beta2=-0.4/k)",
+  /* GB_CTRL_PI_34 */           "PI controller for step size (beta1=2./3./k, beta2=-1./3./k)",
+  /* GB_CTRL_PI_42 */           "PI controller for step size (beta1=0.6/k, beta2=-0.2/k)",
+  /* GB_CTRL_PID_H312 */        "PID controller for step size (alpha1=1./18./k, alpha2=1./9./k, alpha3=1./18./k)",
+  /* GB_CTRL_PID_SOEDERLIND */  "PID controller for step size (alpha1=0.1/k, alpha2=0.2/k, alpha3=0.1/k)",
+  /* GB_CTRL_PID_STIFF */       "PID controller for step size (alpha1=0.58/k, alpha2=0.21/k, alpha3=0.21/k)",
+  /* GB_CTRL_CNST */            "Constant step size"
 };
 
 const char *GB_INTERPOL_METHOD_NAME[GB_INTERPOL_MAX] = {
@@ -1073,18 +1104,12 @@ const char *GB_INTERPOL_METHOD_DESC[GB_INTERPOL_MAX] = {
 
 const char *SOLVER_METHOD_NAME[S_MAX] = {
   /* S_UNKNOWN = 0 */   "unknown",
-  /* S_EULER */         "euler",
-  /* S_HEUN */          "heun",
-  /* S_RUNGEKUTTA */    "rungekutta",
-  /* S_IMPEULER */      "impeuler",
-  /* S_TRAPEZOID */     "trapezoid",
-  /* S_IMPRUNGEKUTTA */ "imprungekutta",
-  /* S_GBODE */         "gbode",
-  /* S_IRKSCO */        "irksco",
   /* S_DASSL */         "dassl",
   /* S_IDA */           "ida",
   /* S_CVODE */         "cvode",
-  /* S_ERKSSC */        "rungekuttaSsc",
+  /* S_GBODE */         "gbode",
+  /* S_EULER */         "euler",
+  /* S_RUNGEKUTTA */    "rungekutta",
   /* S_SYM_SOLVER */    "symSolver",
   /* S_SYM_SOLVER_SSC */"symSolverSsc",
   /* S_QSS */           "qss",
@@ -1093,22 +1118,16 @@ const char *SOLVER_METHOD_NAME[S_MAX] = {
 
 const char *SOLVER_METHOD_DESC[S_MAX] = {
   /* S_UNKNOWN = 0 */   "unknown",
-  /* S_EULER */         "euler - Euler - explicit, fixed step size, order 1",
-  /* S_HEUN */          "heun - Heun's method - explicit, fixed step, order 2",
+  /* S_DASSL */         "dassl (default) - BDF method - implicit (dense solver), variable step size control, adaptive order 1-5, event location",
+  /* S_IDA */           "ida - SUNDIALS IDA solver - BDF method - implicit (sparse/dense solver, default sparse) variable step size control, adaptive order 1-5, event location - additional simulation flags: -idaMaxErrorTestFails -idaMaxNonLinIters -idaMaxConvFails -idaNonLinConvCoef -idaLS -idaScaling -idaSensitivity",
+  /* S_CVODE */         "cvode - SUNDIALS CVODE solver - BDF or Adams-Moulton solver - implicit (dense solver), variable step-size control, adaptive order 1-12, event location - additional simulation flags -cvodeLinearMultistepMethod -cvodeNonlinearSolverIteration",
+  /* S_GBODE */         "gbode - generic Runge-Kutta ODE solver - implicit (sparse solver)/explicit, fixed/variable step size control, order 1-14, event location, optional bi-rate integration - additional simulation flags -gbm -gbctrl -gbratio - additional advanced flags -gbctrl_filter -gbctrl_fhr -gberr -gbint -gbnls -gbfm -gbfctrl -gbferr -gbfint -gbfnls",
+  /* S_EULER */         "euler - explicit Euler, fixed step size, order 1",
   /* S_RUNGEKUTTA */    "rungekutta - classical Runge-Kutta - explicit, fixed step, order 4",
-  /* S_IMPEULER */      "impeuler - Euler - implicit, fixed step size, order 1",
-  /* S_TRAPEZOID */     "trapezoid - trapezoidal rule - implicit, fixed step size, order 2",
-  /* S_IMPRUNGEKUTTA */ "imprungekutta - Runge-Kutta methods based on Radau and Lobatto IIA - implicit, fixed step size, order 1-6(selected manually by flag -impRKOrder)",
-  /* S_GBODE */         "gbode - generic bi-rate ODE solver - implicit, explicit, step size control, arbitrary order",
-  /* S_IRKSCO */        "irksco - own developed Runge-Kutta solver - implicit, step size control, order 1-2",
-  /* S_DASSL */         "dassl - default solver - BDF method - implicit, step size control, order 1-5",
-  /* S_IDA */           "ida - SUNDIALS IDA solver - BDF method with sparse linear solver - implicit, step size control, order 1-5",
-  /* S_CVODE */         "cvode - experimental implementation of SUNDIALS CVODE solver - BDF or Adams-Moulton method - step size control, order 1-12",
-  /* S_ERKSSC */        "rungekuttaSsc - Runge-Kutta based on Novikov (2016) - explicit, step size control, order 4-5 [experimental]",
-  /* S_SYM_SOLVER */     "symSolver - symbolic inline Solver [compiler flag +symSolver needed] - fixed step size, order 1",
-  /* S_SYM_SOLVER_SSC */ "symSolverSsc - symbolic implicit Euler with step size control [compiler flag +symSolver needed] - step size control, order 1",
-  /* S_QSS */           "qss - A QSS solver [experimental]",
-  /* S_OPTIMIZATION */  "optimization - Special solver for dynamic optimization"
+  /* S_SYM_SOLVER */     "symSolver - symbolic inline Solver [compiler flag '--symSolver' needed] - fixed step size, order 1",
+  /* S_SYM_SOLVER_SSC */ "symSolverSsc - symbolic implicit Euler with step size control [compiler flag '--symSolver' needed] - step size control, order 1",
+  /* S_QSS */            "qss - A QSS solver [experimental]",
+  /* S_OPTIMIZATION */   "optimization - Special solver for dynamic optimization"
 };
 
 const char *INIT_METHOD_NAME[IIM_MAX] = {

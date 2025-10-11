@@ -340,19 +340,19 @@ double error_interpolation_gb(DATA_GBODE* gbData, int nIdx, int* idx, double tol
   }
   hermite_interpolation(gbData->timeLeft,  gbData->yLeft,  gbData->kLeft,
                         gbData->timeRight, gbData->yRight, gbData->kRight,
-                        (gbData->timeLeft + gbData->timeRight)/2, gbData->errest,
+                        (gbData->timeLeft + gbData->timeRight)/2, gbData->y2,
                          nIdx, idx);
   if (idx == NULL) {
     for (i=0; i<nIdx; i++) {
       errtol = tol * fmax(fabs(gbData->yLeft[i]), fabs(gbData->yRight[i])) + tol;
-      gbData->errest[i] = fabs(gbData->errest[i] - gbData->y1[i]) / errtol;
+      gbData->errest[i] = fabs(gbData->y2[i] - gbData->y1[i]) / errtol;
       errint = fmax(errint, gbData->errest[i]);
     }
   } else {
     for (ii=0; ii<nIdx; ii++) {
       i = idx[ii];
       errtol = tol * fmax(fabs(gbData->yLeft[i]), fabs(gbData->yRight[i])) + tol;
-      gbData->errest[i] = fabs(gbData->errest[i] - gbData->y1[i]) / errtol;
+      gbData->errest[i] = fabs(gbData->y2[i] - gbData->y1[i]) / errtol;
       errint = fmax(errint, gbData->errest[i]);
     }
   }
@@ -868,19 +868,14 @@ void replacementString(enum GB_METHOD gbMethod, modelica_boolean constant)
 /**
  * @brief Display deprecation warning for integration methods replaced by GBODE.
  *
- * Deprecated methods: heun, impeuler, trapezoid, imprungekutta, irksco, rungekuttaSsc
+ * Deprecated methods: None
  *
  * @param solverMethod  Integration method.
  */
 void deprecationWarningGBODE(enum SOLVER_METHOD method)
 {
   switch (method) {
-    case S_HEUN:
-    case S_IMPEULER:
-    case S_TRAPEZOID:
-    case S_IMPRUNGEKUTTA:
-    case S_IRKSCO:
-    case S_ERKSSC:
+    case S_RUNGEKUTTA:
       break;
     default:
       return;
@@ -888,23 +883,8 @@ void deprecationWarningGBODE(enum SOLVER_METHOD method)
 
   warningStreamPrint(OMC_LOG_STDOUT, 1, "Integration method '%s' is deprecated and will be removed in a future version of OpenModelica.", SOLVER_METHOD_NAME[method]);
   switch (method) {
-    case S_HEUN:
-      replacementString(RK_HEUN, TRUE);
-      break;
-    case S_IMPEULER:
-      replacementString(RK_IMPL_EULER, TRUE);
-      break;
-    case S_TRAPEZOID:
-      replacementString(RK_TRAPEZOID, TRUE);
-      break;
-    case S_IMPRUNGEKUTTA:
-      replacementString(RK_RADAU_IA_2, TRUE);
-      break;
-    case S_IRKSCO:
-      replacementString(RK_TRAPEZOID, FALSE);
-      break;
-    case S_ERKSSC:
-      replacementString(RK_RKSSC, FALSE);
+    case S_RUNGEKUTTA:
+      replacementString(RK_RUNGEKUTTA, TRUE);
       break;
     default:
       throwStreamPrint(NULL, "Not reachable state");

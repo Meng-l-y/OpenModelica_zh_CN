@@ -623,8 +623,8 @@ algorithm
 
     // map index also odeEquations and algebraicEquations
     systemIndexMap := List.fold(allEquations, getSystemIndexMap, arrayCreate(uniqueEqIndex, -1));
-    odeEquations := List.mapList1_1(odeEquations, setSystemIndexMap, systemIndexMap);
-    algebraicEquations := List.mapList1_1(algebraicEquations, setSystemIndexMap, systemIndexMap);
+    odeEquations := List.map1List(odeEquations, setSystemIndexMap, systemIndexMap);
+    algebraicEquations := List.map1List(algebraicEquations, setSystemIndexMap, systemIndexMap);
     modelInfo := addNumEqns(modelInfo, uniqueEqIndex /* This is a *much* better estimate than the guessed number of equations */ );
 
     odeEquations := makeEqualLengthLists(odeEquations, Config.noProc());
@@ -738,7 +738,7 @@ algorithm
     end if;
 
     // fix issue https://github.com/OpenModelica/OpenModelica/issues/12916
-    fileNamePrefixHash := substring(intString(stringHashDjb2(filenamePrefix)), 1, 3);
+    fileNamePrefixHash := Util.hashFileNamePrefix(filenamePrefix);
 
     // Set fullPathPrefix for FMUs
     if isFMU then
@@ -869,7 +869,7 @@ algorithm
       crefs := List.fold(stmts,DAEUtil.getAssertConditionCrefs,{});
       (varLstLst,_) := List.map1_2(crefs,BackendVariable.getVar,vars);
       varLst := List.flatten(varLstLst);
-      true := List.exist(varLst,BackendVariable.isParam);
+      true := List.any(varLst,BackendVariable.isParam);
   then ((varDep,eqIn::paramDep));
   else
     algorithm
@@ -1746,9 +1746,9 @@ algorithm
     BackendDump.dumpVarList(varlst,"Variables:");
   end if;
   // skip is when equations
-  skip := List.mapBoolAnd(eqnlst, BackendEquation.isWhenEquation);
+  skip := List.all(eqnlst, BackendEquation.isWhenEquation);
   // skip is discrete
-  skip := skip or List.mapBoolAnd(varlst, BackendVariable.isVarDiscrete);
+  skip := skip or List.all(varlst, BackendVariable.isVarDiscrete);
 
   outFold := match comp
     local
@@ -5545,7 +5545,6 @@ protected
   DAE.ComponentRef cref;
   Integer size, i, j;
   list<Integer> intLst;
-  array<Integer> intArr;
   list<DAE.ComponentRef> crefs;
 algorithm
   //create HT
@@ -5575,9 +5574,7 @@ algorithm
             intLst := j :: intLst;
           end if;
         end for;
-        intArr := listArray(intLst);
-        Array.heapSort(intArr);
-        intLst := arrayList(intArr);
+        intLst := List.heapSortIntList(intLst);
         outSparse := (i, intLst) :: outSparse;
       end if;
     end for;
@@ -6234,7 +6231,7 @@ algorithm
           _ :=  match stmt
             case BackendDAE.ASSIGN(left = DAE.CREF(componentRef = left)) equation
               crefs = List.map(inVars, BackendVariable.varCref);
-              List.map1rAllValue(crefs, ComponentReference.crefPrefixOf, true, left);
+              true = List.all(crefs, function ComponentReference.crefPrefixOf(prefixCref = left));
             then ();
             else ();
           end match;
@@ -6287,7 +6284,7 @@ algorithm
         _ :=  match stmt
           case BackendDAE.ASSIGN(left = DAE.CREF(componentRef = left)) equation
             crefs = List.map(inVars, BackendVariable.varCref);
-            List.map1rAllValue(crefs, ComponentReference.crefPrefixOf, true, left);
+            true = List.all(crefs, function ComponentReference.crefPrefixOf(prefixCref = left));
           then ();
           else ();
         end match;
@@ -6617,7 +6614,7 @@ algorithm
 
     case (_, e1 as DAE.CREF(componentRef = cr2), e2, _, _, _)
       equation
-        List.map1rAllValue(crefs, ComponentReference.crefPrefixOf, true, cr2);
+        true = List.all(crefs, function ComponentReference.crefPrefixOf(prefixCref = cr2));
         // ((e1_1, _)) = Expression.extendArrExp((e1, false));
         (e2_1, _) = Expression.extendArrExp(e2, false);
         // true = ComponentReference.crefEqualNoStringCompare(cr, cr2);
@@ -6628,7 +6625,7 @@ algorithm
 
     case (_, e1, e2 as DAE.CREF(componentRef = cr2), _, _, _)
       equation
-        List.map1rAllValue(crefs, ComponentReference.crefPrefixOf, true, cr2);
+        true = List.all(crefs, function ComponentReference.crefPrefixOf(prefixCref = cr2));
         // true = ComponentReference.crefEqualNoStringCompare(cr, cr2);
         (e1_1, _) = Expression.extendArrExp(e1, false);
         // ((e2_1, _)) = Expression.extendArrExp((e2, false));
@@ -7313,7 +7310,7 @@ algorithm
   startValueEquations := matchcontinue (syst, shared, acc)
     local
       BackendDAE.Variables vars, av;
-      list<BackendDAE.Equation>  startValueEquationsTmp2;
+      list<BackendDAE.Equation> startValueEquationsTmp2;
       list<SimCode.SimEqSystem> simeqns, simeqns1;
       Integer uniqueEqIndex;
       BackendDAE.Variables globalKnownVars;
@@ -7524,7 +7521,9 @@ algorithm
   end if;
 
   // Create SimCode Equation for special globalKnownVars
-  if (BackendVariable.isParam(globalKnownVar) and BackendVariable.varFixed(globalKnownVar) and (BackendVariable.isFinalOrProtectedVar(globalKnownVar) or BackendVariable.varHasNonConstantBindExpOrStartValue(globalKnownVar)))
+  if (BackendVariable.isParam(globalKnownVar) and
+         ((BackendVariable.varFixed(globalKnownVar) and (BackendVariable.isFinalOrProtectedVar(globalKnownVar) or BackendVariable.varHasNonConstantBindExpOrStartValue(globalKnownVar)))
+      or (BackendVariable.varHasStartValue(globalKnownVar) and not BackendVariable.varHasConstantStartExp(globalKnownVar))))
     or (BackendVariable.isVarAlg(globalKnownVar) and not BackendVariable.isInput(globalKnownVar)) and BackendVariable.varFixed(globalKnownVar)
     or (BackendVariable.isExtObj(globalKnownVar) and BackendVariable.varHasBindExp(globalKnownVar) and BackendVariable.varFixed(globalKnownVar))
    then
@@ -11097,7 +11096,7 @@ algorithm (outRefs) := matchcontinue(inRefs, firstOrderInSec)
   case({}, _) then {};
   case((cr, _)::rest, _)
     equation
-      true = List.map1BoolOr(firstOrderInSec, ComponentReference.crefEqual, cr);
+      true = List.any(firstOrderInSec, function ComponentReference.crefEqual(inComponentRef2 = cr));
       rest = setFirstOrderInSecondOrderVarIndex(rest, firstOrderInSec);
     then
       (cr, 2)::rest;
@@ -12910,7 +12909,7 @@ algorithm
   depVars := arrayGet(m,beq);
   depVars := List.filter1OnTrue(depVars,setUpEqTree_Help,assVar);
   preEqs := List.map1(depVars,Array.getIndexFirst,varMatch);
-  Array.updateElementListAppend(beq,preEqs,treeIn);
+  arrayUpdate(treeIn, beq, listAppend(treeIn[beq], preEqs));
   treeOut := treeIn;
 end setUpEqTree;
 
@@ -13452,7 +13451,7 @@ algorithm
     local
       DAE.Exp lhs;
       DAE.ComponentRef cref;
-      list<DAE.ComponentRef> crefs,crefs2;
+      list<DAE.ComponentRef> crefs, crefs2;
       list<SimCodeVar.SimVar> simVars;
       list<SimCode.SimEqSystem> residual;
     case(SimCode.SES_RESIDUAL())
@@ -14142,7 +14141,7 @@ algorithm
 
     // get derivatives pattern
     intLst := list(getVariableFMIIndex(v) for v in inModelInfo.vars.derivativeVars);
-    derivatives := list(fmiUnknown for fmiUnknown guard(Util.boolOrList(list(isFmiUnknown(i, fmiUnknown) for i in intLst))) in allUnknowns);
+    derivatives := list(fmiUnknown for fmiUnknown guard(List.any(intLst, function isFmiUnknown(inFMIUnknown = fmiUnknown))) in allUnknowns);
 
     // get output pattern
     varsA := List.filterOnTrue(inModelInfo.vars.algVars, isOutputSimVar);
@@ -14151,12 +14150,12 @@ algorithm
     varsD := List.filterOnTrue(inModelInfo.vars.stringAlgVars, isOutputSimVar); // check for outputs in stringAlgVars
     allOutputVars := listAppend(listAppend(varsA,varsB),listAppend(varsC,varsD));
     intLst := list(getVariableFMIIndex(v) for v in allOutputVars);
-    outputs := list(fmiUnknown for fmiUnknown guard(Util.boolOrList(list(isFmiUnknown(i, fmiUnknown) for i in intLst))) in allUnknowns);
+    outputs := list(fmiUnknown for fmiUnknown guard(List.any(intLst, function isFmiUnknown(inFMIUnknown = fmiUnknown))) in allUnknowns);
 
     // get discrete states pattern
     clockedStates := List.filterOnTrue(inModelInfo.vars.algVars, isClockedStateSimVar);
     intLst := list(getVariableFMIIndex(v) for v in clockedStates);
-    discreteStates := list(fmiUnknown for fmiUnknown guard(Util.boolOrList(list(isFmiUnknown(i, fmiUnknown) for i in intLst))) in allUnknowns);
+    discreteStates := list(fmiUnknown for fmiUnknown guard(List.any(intLst, function isFmiUnknown(inFMIUnknown = fmiUnknown))) in allUnknowns);
 
     // discreteStates
     if not checkForEmptyBDAE(optcontPartDer) then

@@ -210,6 +210,12 @@ protected
   list<BackendDAE.Var> referencevar, tempreferencevar, knownVarList={}, aliasVarList={};
   BackendDAE.Var tempvar;
 algorithm
+  // only do this for FMUs
+  if not Flags.getConfigBool(Flags.BUILDING_FMU) then
+    outDAE := inDAE;
+    return;
+  end if;
+
   aliasVars := BackendDAEUtil.getAliasVars(inDAE);
   systvars := BackendVariable.listVar(BackendVariable.equationSystemsVarsLst(inDAE.eqs));
 
@@ -234,8 +240,8 @@ algorithm
       paramOrConst := false;
       const := false;
     else
-      paramOrConst := List.mapAllValueBool(referencevar, BackendVariable.isParamOrConstant, true);
-      const := List.mapAllValueBool(referencevar, BackendVariable.isConst, true);
+      paramOrConst := List.all(referencevar, BackendVariable.isParamOrConstant);
+      const := List.all(referencevar, BackendVariable.isConst);
     end if;
 
     // remove the variable from aliasVarList and add it to knownVarList after changing it to PARAM()/CONST() and fixed=true
@@ -1859,7 +1865,7 @@ algorithm
 
     case (DAE.CREF(cr, _), (b, vars, globalKnownVars, b1, b2, ilst)) equation
       (varlst, _::_)= BackendVariable.getVar(cr, globalKnownVars) "input variables stored in known variables are input on top level";
-      false = List.mapAllValueBool(varlst, toplevelInputOrUnfixed, false);
+      false = List.none(varlst, toplevelInputOrUnfixed);
     then (inExp, false, if b then inTuple else (true, vars, globalKnownVars, b1, b2, ilst));
 
     case (DAE.CALL(path = Absyn.IDENT(name="pre")), (b, vars, globalKnownVars, b1, b2, ilst)) then (inExp, false, if b then inTuple else (true, vars, globalKnownVars, b1, b2, ilst));
@@ -1937,7 +1943,7 @@ algorithm
       equation
         cr::crlst = List.map(vlst, BackendVariable.varCref);
         cr = ComponentReference.crefStripLastSubs(cr);
-        List.map1rAllValue(crlst, ComponentReference.crefPrefixOf, true, cr);
+        true = List.all(crlst, function ComponentReference.crefPrefixOf(prefixCref = cr));
         // try to solve the equation
         cre = Expression.crefExp(cr);
         (es, {}) = ExpressionSolve.solve(lhs, rhs, cre);

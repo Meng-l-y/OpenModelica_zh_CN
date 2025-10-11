@@ -262,6 +262,10 @@ public
     Expression exp "For printing strings, code generators that do not support this kind of literal, or for getting the type in case the code generator needs that";
   end SHARED_LITERAL;
 
+  record INSTANCE_NAME
+    InstNode scope;
+  end INSTANCE_NAME;
+
   function isArray
     input Expression exp;
     output Boolean isArray;
@@ -412,6 +416,7 @@ public
   function hash
     input Expression exp;
     output Integer hash = stringHashDjb2(toString(exp));
+    // TODO use stringHashDjb2Continue
   end hash;
 
   function isEqual
@@ -462,6 +467,7 @@ public
         Mutable<Expression> me;
         list<list<Expression>> mat;
         array<Expression> arr;
+        InstNode node;
 
       case INTEGER()
         algorithm
@@ -738,6 +744,12 @@ public
         then
           Util.stringCompare(exp1.filename, s);
 
+      case INSTANCE_NAME()
+        algorithm
+          INSTANCE_NAME(scope = node) := exp2;
+        then
+          InstNode.refCompare(exp1.scope, node);
+
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown expression.", sourceInfo());
@@ -807,6 +819,7 @@ public
       case EMPTY()           then exp.ty;
       case PARTIAL_FUNCTION_APPLICATION() then exp.ty;
       case FILENAME()        then Type.STRING();
+      case INSTANCE_NAME()   then Type.STRING();
       else Type.UNKNOWN();
     end match;
   end typeOf;
@@ -1702,7 +1715,7 @@ public
     end match;
 
     if not split then
-      split := List.exist(subscripts, Subscript.isSplitIndex);
+      split := List.any(subscripts, Subscript.isSplitIndex);
     end if;
 
     dim_count := Type.dimensionCount(ty);
@@ -1982,6 +1995,7 @@ public
           list(n + " = " + toString(a) threaded for a in exp.args, n in exp.argNames), ", ") + ")";
 
       case FILENAME() then "\"" + System.escapedString(exp.filename, false) + "\"";
+      case INSTANCE_NAME() then "getInstanceName()";
       else anyString(exp);
     end match;
   end toString;
@@ -2085,6 +2099,7 @@ public
           list(n + " = " + toFlatString(a, format) threaded for a in exp.args, n in exp.argNames), ", ") + ")";
 
       case FILENAME() then "\"" + Util.escapeModelicaStringToCString(exp.filename) + "\"";
+      case INSTANCE_NAME() then "getInstanceName()";
       else anyString(exp);
     end match;
   end toFlatString;
@@ -2239,6 +2254,7 @@ public
       case MUTABLE() then getName(Mutable.access(exp.exp));
       case SHARED_LITERAL() then getName(exp.exp);
       case PARTIAL_FUNCTION_APPLICATION() then ComponentRef.toString(exp.fn);
+      case INSTANCE_NAME() then "getInstanceName";
       else toString(exp);
     end match;
   end getName;
@@ -2340,6 +2356,7 @@ public
         then Absyn.Exp.PARTEVALFUNCTION(ComponentRef.toAbsyn(exp.fn),
           Absyn.FunctionArgs.FUNCTIONARGS(list(toAbsyn(e) for e in exp.args), {}));
       case FILENAME() then Absyn.Exp.STRING(exp.filename);
+      case INSTANCE_NAME() then AbsynUtil.makeCall(Absyn.ComponentRef.CREF_IDENT("getInstanceName", {}), {});
 
       else
         algorithm
@@ -2432,7 +2449,7 @@ public
         then DAE.TSUB(toDAE(exp.tupleExp), exp.index, Type.toDAE(exp.ty));
 
       case RECORD_ELEMENT()
-        then DAE.RSUB(toDAE(exp.recordExp), exp.index, exp.fieldName, Type.toDAE(exp.ty));
+        then DAE.RSUB(toDAE(exp.recordExp), -1, exp.fieldName, Type.toDAE(exp.ty));
 
       case PARTIAL_FUNCTION_APPLICATION()
         algorithm
@@ -2451,6 +2468,7 @@ public
                         {DAE.SCONST(exp.filename)}, DAE.callAttrBuiltinImpureString)
              else
                DAE.SCONST(exp.filename);
+      case INSTANCE_NAME() then DAE.CALL(Absyn.Path.IDENT("getInstanceName"), {}, DAE.callAttrBuiltinString);
 
       else
         algorithm
@@ -3578,7 +3596,7 @@ public
       case MATRIX()
         algorithm
           for row in exp.elements loop
-            applyList(row, func);
+            applyListShallow(row, func);
           end for;
         then
           ();
@@ -4318,14 +4336,14 @@ public
     res := match exp
       case CLKCONST() then ClockKind.containsExpShallow(exp.clk, func);
       case CREF() then ComponentRef.containsExpShallow(exp.cref, func);
-      case ARRAY() then Array.exist(exp.elements, func);
+      case ARRAY() then Array.any(exp.elements, func);
 
       case MATRIX()
         algorithm
           res := false;
 
           for row in exp.elements loop
-            if List.exist(row, func) then
+            if List.any(row, func) then
               res := true;
               break;
             end if;
@@ -4338,8 +4356,8 @@ public
              Util.applyOptionOrDefault(exp.step, func, false) or
              func(exp.stop);
 
-      case TUPLE() then List.exist(exp.elements, func);
-      case RECORD() then List.exist(exp.elements, func);
+      case TUPLE() then List.any(exp.elements, func);
+      case RECORD() then List.any(exp.elements, func);
       case CALL() then Call.containsExpShallow(exp.call, func);
 
       case SIZE()
@@ -4410,9 +4428,9 @@ public
     allEqual := match arrayExp
       case ARRAY()
         guard not arrayEmpty(arrayExp.elements) and isArray(arrayGet(arrayExp.elements, 1))
-        then Array.mapBoolAnd(arrayExp.elements, function arrayAllEqual2(element = element));
+        then Array.all(arrayExp.elements, function arrayAllEqual2(element = element));
       case ARRAY()
-        then Array.mapBoolAnd(arrayExp.elements, function isEqual(exp2 = element));
+        then Array.all(arrayExp.elements, function isEqual(exp2 = element));
       else true;
     end match;
   end arrayAllEqual2;
@@ -4669,17 +4687,12 @@ public
   function isLiteralReplace
     input Expression exp;
     output Boolean b;
-  protected
-    function isLiteralReplaceElement
-      "mock function to not change isLiteral()"
-      input Expression exp;
-      output Boolean b = not Expression.isRecord(exp) and Expression.isLiteral(exp);
-    end isLiteralReplaceElement;
   algorithm
     b := match exp
       case STRING()         then true;
       case BOX(STRING())    then true;
-      case ARRAY()          then exp.literal or Array.all(exp.elements, isLiteralReplaceElement);
+      case RECORD()         then isLiteral(exp);
+      case ARRAY()          then isLiteral(exp);
       else false;
     end match;
   end isLiteralReplace;
@@ -4784,9 +4797,11 @@ public
   protected
     Type arr_ty = typeOf(result);
     Boolean is_literal = isLiteral(fillExp);
+    Expression d_resizable;
   algorithm
     for d in listReverse(dims) loop
-      (result, arr_ty) := fillArray_impl(toInteger(d), result, arr_ty, is_literal);
+      d_resizable := map(d, function replaceResizableParameter());
+      (result, arr_ty) := fillArray_impl(toInteger(d_resizable), result, arr_ty, is_literal);
     end for;
   end fillArgs;
 
@@ -5395,6 +5410,7 @@ public
       case EMPTY() then Variability.CONSTANT;
       case PARTIAL_FUNCTION_APPLICATION() then Variability.CONTINUOUS;
       case FILENAME() then Variability.CONSTANT;
+      case INSTANCE_NAME() then Variability.CONSTANT;
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown expression.", sourceInfo());
@@ -5475,6 +5491,7 @@ public
       case EMPTY() then Purity.PURE;
       case PARTIAL_FUNCTION_APPLICATION() then Purity.PURE;
       case FILENAME() then Purity.PURE;
+      case INSTANCE_NAME() then Purity.PURE;
       else
         algorithm
           Error.assertion(false, getInstanceName() + " got unknown expression.", sourceInfo());
@@ -6567,33 +6584,58 @@ public
     input UnorderedMap<Expression, Integer> map;
     input Pointer<Integer> idx_ptr;
   protected
-    Integer idx;
-    Option<Integer> idx_opt;
-    Expression new_exp;
+    function replace
+      input output Expression exp;
+      input UnorderedMap<Expression, Integer> map;
+      input Pointer<Integer> idx_ptr;
+    protected
+      Integer idx;
+      Option<Integer> idx_opt;
+    algorithm
+      idx_opt := UnorderedMap.get(exp, map);
+      if Util.isSome(idx_opt) then
+        // this literal already exists
+        idx := Util.getOption(idx_opt);
+      else
+        // new literal found
+        idx := Pointer.access(idx_ptr);
+        Pointer.update(idx_ptr, idx + 1);
+        UnorderedMap.add(exp, idx, map);
+      end if;
+      exp := SHARED_LITERAL(idx, exp);
+    end replace;
   algorithm
     exp := match exp
-      // replace literal expressions that are not trivial
-      case _ guard(isLiteralReplace(exp)) algorithm
-        idx_opt := UnorderedMap.get(exp, map);
-        if Util.isSome(idx_opt) then
-          // this literal already exists
-          idx := Util.getOption(idx_opt);
-        else
-          // new literal found
-          idx := Pointer.access(idx_ptr);
-          Pointer.update(idx_ptr, idx + 1);
-          UnorderedMap.add(exp, idx, map);
-        end if;
-        new_exp := SHARED_LITERAL(idx, exp);
-      then new_exp;
-
       // do nothing on shared literal
-      case Expression.SHARED_LITERAL() then exp;
+      case Expression.SHARED_LITERAL()          then exp;
+
+      // replace literal array expressions that are not trivial
+      case ARRAY() guard(isLiteralReplace(exp)) then replace(replaceLiteralArrayElements(exp, map, idx_ptr), map, idx_ptr);
+
+      case RECORD() guard(isLiteralReplace(exp)) algorithm
+        exp.elements := list(replaceLiteral(elem, map, idx_ptr) for elem in exp.elements);
+      then replace(exp, map, idx_ptr);
+
+      // replace literal expressions that are not trivial
+      case _ guard(isLiteralReplace(exp))       then replace(exp, map, idx_ptr);
 
       // map down for other expressions
       else Expression.mapShallow(exp, function replaceLiteral(map = map, idx_ptr = idx_ptr));
     end match;
   end replaceLiteral;
+
+  function replaceLiteralArrayElements
+    input output Expression exp;
+    input UnorderedMap<Expression, Integer> map;
+    input Pointer<Integer> idx_ptr;
+  algorithm
+    exp := match exp
+      case ARRAY() algorithm
+        exp.elements := Array.map(exp.elements, function replaceLiteralArrayElements(map = map, idx_ptr = idx_ptr));
+      then exp;
+      else replaceLiteral(exp, map, idx_ptr);
+    end match;
+  end replaceLiteralArrayElements;
 
   function replaceResizableParameter
     input output Expression exp;
@@ -6606,7 +6648,12 @@ public
     algorithm
       exp := match InstNode.getBindingExpOpt(ComponentRef.node(cref))
         case SOME(e as Expression.INTEGER()) then e;
+        case SOME(e as Expression.CREF()) then replaceWithBinding(e.cref, e);
         case SOME(Expression.SUBSCRIPTED_EXP(exp = e as Expression.INTEGER())) then e;
+        case SOME(Expression.SUBSCRIPTED_EXP(exp = e as Expression.CREF())) then replaceWithBinding(e.cref, e);
+        case SOME(e) algorithm
+          e := Expression.map(e, replaceResizableParameter);
+        then e;
         else exp;
       end match;
     end replaceWithBinding;

@@ -219,12 +219,31 @@ typedef struct EXTERNAL_INPUT
   modelica_integer i;
 } EXTERNAL_INPUT;
 
+/**
+ * @brief Specifies homotopy method
+ *
+ */
+typedef enum HOMOTOPY_METHOD
+{
+  LOCAL_EQUIDISTANT_HOMOTOPY = 0,   // 0: local homotopy (equidistant lambda)
+  GLOBAL_EQUIDISTANT_HOMOTOPY = 1,  // 1: global homotopy (equidistant lambda)
+  GLOBAL_ADAPTIVE_HOMOTOPY = 2,     // 2: new global homotopy approach (adaptive lambda)
+  LOCAL_ADAPTIVE_HOMOTOPY = 3,      // 3: new local homotopy approach (adaptive lambda)
+  NO_HOMOTOPY = 4                   // 4: no homotopy / else
+} HOMOTOPY_METHOD;
+
+enum ALIAS_TYPE {
+  ALIAS_TYPE_VARIABLE = 0,
+  ALIAS_TYPE_PARAMETER = 1,
+  ALIAS_TYPE_TIME = 2,
+};
+
 /* Alias data with various types */
 typedef struct DATA_ALIAS
 {
   int negate;
   int nameID;                          /* pointer to Alias */
-  char aliasType;                      /* 0 variable, 1 parameter, 2 time */
+  enum ALIAS_TYPE aliasType;           /* 0 variable, 1 parameter, 2 time */
   VAR_INFO info;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
 } DATA_ALIAS;
@@ -266,8 +285,28 @@ typedef struct STRING_ATTRIBUTE
   modelica_string start;               /* = "" */
 } STRING_ATTRIBUTE;
 
+/* Model dimension structures */
+enum DIMENSION_ATTRIBUTE_TYPE{
+  DIMENSION_BY_START = 0,               /* dimension defined by start */
+  DIMENSION_BY_VALUE_REFERENCE = 1      /* dimension defined by value reference of structural parameter */
+};
+
+typedef struct DIMENSION_ATTRIBUTE
+{
+  enum DIMENSION_ATTRIBUTE_TYPE type;      /* How the dimension is defined */
+  modelica_integer start;             /* If type=DIMENSION_BY_START: Dimension */
+  modelica_integer valueReference;    /* If type=DIMENSION_BY_VALUE_REFERENCE: Value reference of structural parameter specifying dimension */
+} DIMENSION_ATTRIBUTE;
+
+typedef struct DIMENSION_INFO
+{
+  modelica_integer numberOfDimensions;  /* number of dimension tags <dimension> */
+  DIMENSION_ATTRIBUTE* dimensions;      /* array of dimension sizes */
+} DIMENSION_INFO;
+
 typedef struct STATIC_REAL_DATA
 {
+  DIMENSION_INFO dimension;
   VAR_INFO info;
   REAL_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
@@ -276,6 +315,7 @@ typedef struct STATIC_REAL_DATA
 
 typedef struct STATIC_INTEGER_DATA
 {
+  DIMENSION_INFO dimension;
   VAR_INFO info;
   INTEGER_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
@@ -284,6 +324,7 @@ typedef struct STATIC_INTEGER_DATA
 
 typedef struct STATIC_BOOLEAN_DATA
 {
+  DIMENSION_INFO dimension;
   VAR_INFO info;
   BOOLEAN_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
@@ -292,6 +333,7 @@ typedef struct STATIC_BOOLEAN_DATA
 
 typedef struct STATIC_STRING_DATA
 {
+  DIMENSION_INFO dimension;
   VAR_INFO info;
   STRING_ATTRIBUTE attribute;
   modelica_boolean filterOutput;       /* true if this variable should be filtered */
@@ -589,25 +631,35 @@ typedef struct MODEL_DATA
 
   long nBaseClocks;                    /* total number of base-clocks*/
 
-  fortran_integer nStates;
+  /* Number of un-scalrarized variables (arrays count as one variable) */
+  long nStatesArray;            /* Number of array + scalar state variables */
+  long nVariablesRealArray;     /* Number of array + scalar real variables: states + state derivatives + real algebraic variables */
+  long nVariablesIntegerArray;  /* Number of array + scalar integer variables */
+  long nVariablesBooleanArray;  /* Number of array + scalar boolean variables */
+  long nVariablesStringArray;   /* Number of array + scalar string variables */
+  long nParametersRealArray;    /* Number of array + scalar real parameters */
+  long nParametersIntegerArray; /* Number of array + scalar integer parameters */
+  long nParametersBooleanArray; /* Number of array + scalar boolean parameters */
+  long nParametersStringArray;  /* Number of array + scalar string parameters */
 
-  /* numbers of unscalarized variables (arrays counted as one variable, used for index map) */
-  size_t nVariablesRealArray;
-  size_t nVariablesIntegerArray;
-  size_t nVariablesBooleanArray;
-  size_t nVariablesStringArray;
+  /* Number of scalarized variables (arrays are flatten to scalar elements.) */
+  long nStates;                 /* Number of state variables*/
+  long nVariablesReal;          /* Number of real variables: states + state derivatives + real algebraic variables + real discrete variables */
+  long nDiscreteReal;           /* Number of all discrete real variables */
+  long nVariablesInteger;       /* Number of integer variables */
+  long nVariablesBoolean;       /* Number of boolean variables */
+  long nVariablesString;        /* Number of string variables */
+  long nParametersReal;         /* Number of real parameters */
+  long nParametersInteger;      /* Number of integer parameters */
+  long nParametersBoolean;      /* Number of boolean parameters */
+  long nParametersString;       /* Number of string parameters */
+  long nInputVars;              /* Number of input variables */
+  long nOutputVars;             /* Number of output variables */
 
-  long nVariablesReal;                 /* all Real Variables of the model (states, statesderivatives, algebraics, real discretes) */
-  long nDiscreteReal;                  /* only all _discrete_ reals */
-  long nVariablesInteger;
-  long nVariablesBoolean;
-  long nVariablesString;
-  long nParametersReal;
-  long nParametersInteger;
-  long nParametersBoolean;
-  long nParametersString;
-  long nInputVars;
-  long nOutputVars;
+  long nAliasReal;              /* Number of real alias variables */
+  long nAliasInteger;           /* Number of integer alias variables */
+  long nAliasBoolean;           /* Number of boolean alias variables */
+  long nAliasString;            /* Number of string alias variables */
 
   long nZeroCrossings;
   long nRelations;
@@ -622,11 +674,6 @@ typedef struct MODEL_DATA
   long nInlineVars;                    /* number of additional variables for the inline solver */
   long nOptimizeConstraints;           /* number of additional variables for constraint in dynamic optimization */
   long nOptimizeFinalConstraints;      /* number of additional variables for final constraint in dynamic optimization */
-
-  long nAliasReal;
-  long nAliasInteger;
-  long nAliasBoolean;
-  long nAliasString;
 
   long nJacobians;
 
@@ -787,6 +834,10 @@ typedef struct SIMULATION_INFO
   size_t* integerVarsIndex;
   size_t* booleanVarsIndex;
   size_t* stringVarsIndex;
+  size_t* realParamsIndex;
+  size_t* integerParamsIndex;
+  size_t* booleanParamsIndex;
+  size_t* stringParamsIndex;
 
   /* old vars for event handling */
   modelica_real timeValueOld;

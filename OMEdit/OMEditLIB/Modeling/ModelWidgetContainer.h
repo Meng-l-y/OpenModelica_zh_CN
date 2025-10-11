@@ -644,6 +644,8 @@ private:
   ModelInstance::Model *mpRootModelInstance;
   QList<ModelInstance::Model*> mModelInstanceList;
   int mModelInstancesPos = -1;
+  LibraryTreeItem *mpRootLibraryTreeItem;
+  QList<LibraryTreeItem*> mLibraryTreeItemList;
   QList<ShapeAnnotation*> mPreservedIconShapesList;
   QList<ShapeAnnotation*> mPreservedDiagramShapesList;
   ModelInfo mModelInfo;
@@ -722,7 +724,6 @@ public slots:
   void deleteIcon();
   void addConnector();
   void addBus();
-  void addTLMBus();
   void addSubModel();
 };
 

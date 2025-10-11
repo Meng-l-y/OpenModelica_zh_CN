@@ -846,9 +846,11 @@ algorithm
       end if;
     end if;
 
-    // Constants also must have binding equations if they are used, but this is
-    // checked when evaluating them.
-
+    // Constants must have binding equations.
+    if Binding.isUnbound(binding) then
+      Error.addSourceMessage(Error.NO_CONSTANT_BINDING, {ComponentRef.toString(var.name)}, var.info);
+      fail();
+    end if;
   else
     if fixed and Binding.isUnbound(binding) then
       start_binding := Variable.lookupTypeAttribute("start", var);
@@ -1329,7 +1331,7 @@ algorithm
       // convert simple equality of crefs to array equality
       // kabdelhak: only do it if all subscripts are simple enough
       //            will lead to complicated code if not index or whole dim
-      //            and we are better of just using for loops for these
+      //            and we are better off just using for loops for these
       case Equation.EQUALITY(lhs = lhs as Expression.CREF(), rhs = rhs as Expression.CREF())
         guard(not Flags.getConfigBool(Flags.NEW_BACKEND)
           or (List.all(ComponentRef.subscriptsAllWithWholeFlat(lhs.cref), Subscript.isSimple)
@@ -1432,15 +1434,13 @@ protected
   Component iter_comp;
   InstNode prefix_node, iter;
   Expression range;
-  Integer index = 1;
   Subscript sub;
 algorithm
   prefix_node := ComponentRef.node(prefix);
 
   for dim in dimensions loop
-    iter := InstNode.newIndexedIterator(index, "i", InstNode.info(prefix_node));
+    iter := InstNode.newUniqueIterator(InstNode.info(prefix_node));
     iterators := iter :: iterators;
-    index := index + 1;
 
     range := Expression.makeRange(Expression.INTEGER(1), NONE(), Dimension.sizeExp(dim));
     ranges := range :: ranges;
@@ -1464,7 +1464,8 @@ function addIterator_traverse
   input Prefix prefix;
   input list<Subscript> subscripts;
 protected
-  String restString, prefixString = ComponentRef.toString(Prefix.prefix(prefix));
+  ComponentRef ref = Prefix.prefix(prefix);
+  String restString, prefixString = ComponentRef.toString(ref);
 algorithm
   exp := match exp
     local
@@ -1473,13 +1474,30 @@ algorithm
       algorithm
         restString := ComponentRef.toString(restCref);
         if StringUtil.startsWith(restString, prefixString) then
-          exp.cref := ComponentRef.mergeSubscripts(subscripts, exp.cref, applyToScope = true);
+          exp.cref := mergeIterator(exp.cref, ref, subscripts);
         end if;
       then
         exp;
     else exp;
   end match;
 end addIterator_traverse;
+
+function mergeIterator
+  input output ComponentRef cref;
+  input ComponentRef ref;
+  input list<Subscript> subscripts;
+algorithm
+  cref := match cref
+    case ComponentRef.CREF() algorithm
+      if ComponentRef.isEqual(cref, ref) then
+        cref.subscripts := listAppend(cref.subscripts, subscripts);
+      else
+        cref.restCref := mergeIterator(cref.restCref, ref, subscripts);
+      end if;
+    then cref;
+    else cref;
+  end match;
+end mergeIterator;
 
 function containsPrefix
   input Expression exp;
@@ -1611,8 +1629,7 @@ algorithm
     case Expression.IF(ty = Type.CONDITIONAL_ARRAY())
       then flattenConditionalArrayIfExp(exp, prefix, info);
 
-    case Expression.CALL()
-      guard Call.isNamed(exp.call, "getInstanceName")
+    case Expression.INSTANCE_NAME()
       then Expression.STRING(Prefix.instanceName(prefix));
 
     else Expression.mapShallow(exp, function flattenExp(prefix = prefix, info = info));
@@ -2513,17 +2530,17 @@ function evaluateBindingConnOp
   input UnorderedMap<ComponentRef, Variable> variables;
   input CardinalityTable.Table ctable;
 protected
-  Binding binding;
   Expression exp, eval_exp;
 algorithm
   () := match var
-    case Variable.VARIABLE(binding = binding as Binding.TYPED_BINDING(bindingExp = exp))
+    case Variable.VARIABLE()
+      guard Binding.hasExp(var.binding)
       algorithm
+        exp := Binding.getExp(var.binding);
         eval_exp := ConnectEquations.evaluateOperators(exp, sets, setsArray, variables, ctable);
 
         if not referenceEq(exp, eval_exp) then
-          binding.bindingExp := eval_exp;
-          var.binding := binding;
+          var.binding := Binding.setExp(eval_exp, var.binding);
         end if;
       then
         ();

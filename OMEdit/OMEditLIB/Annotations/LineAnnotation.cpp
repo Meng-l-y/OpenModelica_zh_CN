@@ -706,10 +706,12 @@ void LineAnnotation::paint(QPainter *painter, const QStyleOptionGraphicsItem *op
                       && intersectionPoint != lastPoint1
                       && intersectionPoint != firstPoint2
                       && intersectionPoint != lastPoint2) {
+                    // draw the intersection point node with 50% increased width
+                    int radii = qCeil(painter->pen().widthF() * 1.5);
                     painter->save();
                     painter->setPen(Qt::NoPen);
                     painter->setBrush(QBrush(mLineColor));
-                    painter->drawEllipse(intersectionPoint, 0.75, 0.75);
+                    painter->drawEllipse(intersectionPoint, radii, radii);
                     painter->restore();
                   }
                 }
@@ -1364,10 +1366,6 @@ void LineAnnotation::showOMSConnection()
       && (mpEndElement && mpEndElement->getLibraryTreeItem()->getOMSBusConnector())) {
     BusConnectionDialog *pBusConnectionDialog = new BusConnectionDialog(mpGraphicsView, this, false);
     pBusConnectionDialog->exec();
-  } else if ((mpStartElement && mpStartElement->getLibraryTreeItem()->getOMSTLMBusConnector())
-             && (mpEndElement && mpEndElement->getLibraryTreeItem()->getOMSTLMBusConnector())) {
-    TLMConnectionDialog *pTLMBusConnectionDialog = new TLMConnectionDialog(mpGraphicsView, this, false);
-    pTLMBusConnectionDialog->exec();
   }
 }
 
@@ -1411,15 +1409,18 @@ void LineAnnotation::handleCollidingConnections()
   QList<QGraphicsItem*> items = collidingItems(Qt::IntersectsItemShape);
   for (int i = 0; i < items.size(); ++i) {
     if (Element *pElement = dynamic_cast<Element*>(items.at(i))) {
-      if ((pElement->getModel() && pElement->getModel()->isConnector())
-          || (pElement->getLibraryTreeItem() && (pElement->getLibraryTreeItem()->getOMSConnector() || pElement->getLibraryTreeItem()->getOMSBusConnector()
-                                                 || pElement->getLibraryTreeItem()->getOMSTLMBusConnector()))) {
+      if (pElement->isConnector()
+          || (pElement->getLibraryTreeItem() && (pElement->getLibraryTreeItem()->getOMSConnector() || pElement->getLibraryTreeItem()->getOMSBusConnector()))) {
         mCollidingConnectorElements.append(pElement);
       }
     } else if (LineAnnotation *pConnectionAnnotation = dynamic_cast<LineAnnotation*>(items.at(i))) {
+      /* Issue #14335
+       * We check start and end element names to avoid adding connections which are not connected to the same component as colliding connections.
+       * We have array elements as connectors so we cannot compare the pointers of start and end elements.
+       */
       if (mSmooth != StringHandler::SmoothBezier && pConnectionAnnotation->getSmooth() != StringHandler::SmoothBezier && pConnectionAnnotation->isConnection()
-          && (mpStartElement == pConnectionAnnotation->getStartElement() || mpStartElement == pConnectionAnnotation->getEndElement()
-              || mpEndElement == pConnectionAnnotation->getStartElement() || mpEndElement == pConnectionAnnotation->getEndElement())) {
+          && (mStartElementName == pConnectionAnnotation->getStartElementName() || mStartElementName == pConnectionAnnotation->getEndElementName()
+              || mEndElementName == pConnectionAnnotation->getStartElementName() || mEndElementName == pConnectionAnnotation->getEndElementName())) {
         mCollidingConnections.append(pConnectionAnnotation);
       }
     }

@@ -97,8 +97,6 @@ enum _FLAG
   FLAG_IIM,
   FLAG_IIT,
   FLAG_ILS,
-  FLAG_IMPRK_ORDER,
-  FLAG_IMPRK_LS,
   FLAG_INITIAL_STEP_SIZE,
   FLAG_INPUT_CSV,
   FLAG_INPUT_FILE_STATES,
@@ -127,6 +125,10 @@ enum _FLAG
   FLAG_MAX_ORDER,
   FLAG_MAX_STEP_SIZE,
   FLAG_MEASURETIMEPLOTFORMAT,
+  FLAG_MOO_OPTIMIZATION,
+  FLAG_MOO_L2BN_P1_ITERATIONS,
+  FLAG_MOO_L2BN_P2_ITERATIONS,
+  FLAG_MOO_L2BN_P2_LEVEL,
   FLAG_NEWTON_FTOL,
   FLAG_NEWTON_MAX_STEPS,
   FLAG_NEWTON_MAX_STEP_FACTOR,
@@ -163,6 +165,8 @@ enum _FLAG
   FLAG_DATA_RECONCILE_STATE,
   FLAG_SR,
   FLAG_SR_CTRL,
+  FLAG_SR_CTRL_FILTER,
+  FLAG_SR_CTRL_FHR,
   FLAG_SR_ERR,
   FLAG_SR_INT,
   FLAG_SR_NLS,
@@ -280,11 +284,15 @@ extern const char *GB_NLS_METHOD_DESC[GB_NLS_MAX];
  * @brief Step size controller method
  */
 enum GB_CTRL_METHOD {
-  GB_CTRL_UNKNOWN = 0,  /* Unknown controller */
-  GB_CTRL_I = 1,        /* I controller */
-  GB_CTRL_PI = 2,       /* PI controller */
-  GB_CTRL_PID = 3,       /* PID controller */
-  GB_CTRL_CNST = 4,     /* Constant step size */
+  GB_CTRL_UNKNOWN = 0,        /* Unknown controller */
+  GB_CTRL_I = 1,              /* I controller */
+  GB_CTRL_PI_33 = 2,          /* PI controller for step size */
+  GB_CTRL_PI_34 = 3,          /* PI controller for step size */
+  GB_CTRL_PI_42 = 4,          /* PI controller for step size */
+  GB_CTRL_PID_H312 = 5,       /* PID controller for step size */
+  GB_CTRL_PID_SOEDERLIND = 6, /* PID controller for step size */
+  GB_CTRL_PID_STIFF = 7,      /* PID controller for step size */
+  GB_CTRL_CNST = 8,           /* Constant step size */
 
   GB_CTRL_MAX
 };
@@ -312,18 +320,12 @@ enum SOLVER_METHOD
 {
   S_UNKNOWN = 0,
 
-  S_EULER,
-  S_HEUN,
-  S_RUNGEKUTTA,
-  S_IMPEULER,
-  S_TRAPEZOID,
-  S_IMPRUNGEKUTTA,
-  S_GBODE,
-  S_IRKSCO,
   S_DASSL,
   S_IDA,
   S_CVODE,
-  S_ERKSSC,
+  S_GBODE,
+  S_EULER,
+  S_RUNGEKUTTA,
   S_SYM_SOLVER,
   S_SYM_SOLVER_SSC,
   S_QSS,

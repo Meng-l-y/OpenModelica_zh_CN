@@ -98,7 +98,13 @@ public:
   VariablesTreeItem* rootParent();
   QVariant getValue(QString fromUnit, QString toUnit);
 
-  QList<VariablesTreeItem*> mChildren;
+  QVector<VariablesTreeItem*> mChildren;
+  /* See issue #14192
+   * We need a hash to speed up the search for child items.
+   * We maintain both mChildren vector and mChildrenHash hash.
+   * One is ordered vector and other is unordered hash.
+   */
+  QHash<QString, VariablesTreeItem*> mChildrenHash;
 private:
   VariablesTreeItem *mpParentVariablesTreeItem;
   bool mIsRootItem;
@@ -174,7 +180,7 @@ private:
   void getVariableInformation(ModelicaMatReader *pMatReader, QString variableToFind, QString *type, QString *value, bool *changeAble, QString *variability,
                               QString *unit, QString *displayUnit, QString *description);
 signals:
-  void itemChecked(const QModelIndex &index, qreal curveThickness, int curveStyle, bool shiftKey);
+  void itemChecked(const QModelIndex &index, qreal curveThickness, int curveStyle, int keyDown);
   void unitChanged(const QModelIndex &index);
   void valueEntered(const QModelIndex &index);
   void variableTreeItemRemoved(QString variable);
@@ -268,7 +274,7 @@ private:
   void unCheckCurveVariable(const QString &variable);
   void updateDisplayUnitAndValue(const QString &unitPrefix, const QString &displayUnit, VariablesTreeItem *pVariablesTreeItem);
 public slots:
-  void plotVariables(const QModelIndex &index, qreal curveThickness, int curveStyle, bool shiftKey, OMPlot::PlotCurve *pPlotCurve = 0, OMPlot::PlotWindow *pPlotWindow = 0);
+  void plotVariables(const QModelIndex &index, qreal curveThickness, int curveStyle, int keyDown, OMPlot::PlotCurve *pPlotCurve = 0, OMPlot::PlotWindow *pPlotWindow = 0);
   void unitChanged(const QModelIndex &index);
   void updatePlottedVariablesDisplayUnitAndValue();
   void simulationTimeChanged(int value);

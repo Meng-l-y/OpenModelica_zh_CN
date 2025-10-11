@@ -401,7 +401,7 @@ QRectF Element::boundingRect() const
   } else if (isPort()) {
     ExtentAnnotation extent;
     if (mpModelComponent) {
-      if (mpModelComponent->getModel()->isConnector() && (mpGraphicsView->isDiagramView()) && canUseDiagramAnnotation()) {
+      if (mpModelComponent->isConnector() && (mpGraphicsView->isDiagramView()) && canUseDiagramAnnotation()) {
         mpModelComponent->getAnnotation()->getPlacementAnnotation().getTransformation().getExtent();
       } else {
         mpModelComponent->getAnnotation()->getPlacementAnnotation().getIconTransformation().getExtent();
@@ -557,7 +557,7 @@ ModelInstance::CoordinateSystem Element::getCoordinateSystem() const
 {
   ModelInstance::CoordinateSystem coordinateSystem;
   if (mpModelComponent && mpModel) {
-    if (mpModelComponent->getModel()->isConnector() && (mpGraphicsView->isDiagramView()) && canUseDiagramAnnotation()) {
+    if (mpModelComponent->isConnector() && (mpGraphicsView->isDiagramView()) && canUseDiagramAnnotation()) {
       coordinateSystem = mpModel->getAnnotation()->getDiagramAnnotation()->mMergedCoordinateSystem;
     } else {
       coordinateSystem = mpModel->getAnnotation()->getIconAnnotation()->mMergedCoordinateSystem;
@@ -626,7 +626,7 @@ QString Element::getPlacementAnnotation(bool ModelicaSyntax)
       placementAnnotationString.append(QString("visible=%1,").arg(mTransformation.getVisible().toQString()));
     }
   }
-  if ((mpLibraryTreeItem && mpLibraryTreeItem->isConnector()) || (mpModelComponent && mpModelComponent->getModel()->isConnector())) {
+  if ((mpLibraryTreeItem && mpLibraryTreeItem->isConnector()) || (mpModelComponent && mpModelComponent->isConnector())) {
     if (mpGraphicsView->isIconView()) {
       // first get the component from diagram view and get the transformations
       Element *pElement = mpGraphicsView->getModelWidget()->getDiagramGraphicsView()->getElementObject(getName());
@@ -692,7 +692,7 @@ QString Element::getOMCPlacementAnnotation(QPointF position)
   if (mTransformation.isValid()) {
     placementAnnotationString.append(mTransformation.getVisible() ? "true" : "false");
   }
-  if ((mpLibraryTreeItem && mpLibraryTreeItem->isConnector()) || (mpModelComponent && mpModelComponent->getModel()->isConnector())) {
+  if ((mpLibraryTreeItem && mpLibraryTreeItem->isConnector()) || (mpModelComponent && mpModelComponent->isConnector())) {
     if (mpGraphicsView->isIconView()) {
       // first get the component from diagram view and get the transformations
       Element *pElement;
@@ -744,6 +744,16 @@ QString Element::getTransformationExtent()
   transformationExtent.append(QString::number(extent2.x())).append(",");
   transformationExtent.append(QString::number(extent2.y())).append("}");
   return transformationExtent;
+}
+
+/*!
+ * \brief Element::isConnector
+ * Returns true if the Element class is connector.
+ * \return
+ */
+bool Element::isConnector() const
+{
+  return mpModel && mpModel->isConnector();
 }
 
 /*!
@@ -891,7 +901,7 @@ void Element::createClassElements()
     foreach (auto pElement, elements) {
       if (pElement->isComponent()) {
         auto pComponent = dynamic_cast<ModelInstance::Component*>(pElement);
-        if (pComponent->isPublic() && pComponent->getModel() && pComponent->getModel()->isConnector()) {
+        if (pComponent->isPublic() && pComponent->isConnector()) {
           mElementsList.append(new Element(pComponent, this, getRootParentElement()));
         }
       }
@@ -1079,23 +1089,25 @@ QPair<QString, bool> Element::getParameterDisplayString(QString parameterName)
   if (mpModelComponent && mpModelComponent->getModel()) {
     ModelInstance::Element *pElement = mpModelComponent->getModel()->getRootParentElement();
 
-    QStringList nameList;
-    nameList = StringHandler::makeVariableParts(mpModelComponent->getQualifiedName());
-    // the first item is element name
-    if (!isInheritedElement() && !nameList.isEmpty()) {
-      nameList.removeFirst();
-    }
+    if (pElement) {
+      QStringList nameList;
+      nameList = StringHandler::makeVariableParts(mpModelComponent->getQualifiedName());
+      // the first item is element name
+      if (!isInheritedElement() && !nameList.isEmpty()) {
+        nameList.removeFirst();
+      }
 
-    displayString = pElement->getVariableValue(QStringList() << nameList << StringHandler::makeVariableParts(parameterName));
-    if (pElement->getModel()) {
-      typeName = pElement->getModel()->getVariableType(QStringList() << nameList << StringHandler::makeVariableParts(parameterName));
-    }
+      displayString = pElement->getVariableValue(QStringList() << nameList << StringHandler::makeVariableParts(parameterName));
+      if (pElement->getModel()) {
+        typeName = pElement->getModel()->getVariableType(QStringList() << nameList << StringHandler::makeVariableParts(parameterName));
+      }
 
-    /* Ticket #4084
-     * Check for enumeration type and shorten display string.
-     */
-    if (displayString.second) {
-      Element::checkEnumerationDisplayString(displayString.first, typeName);
+      /* Ticket #4084
+       * Check for enumeration type and shorten display string.
+       */
+      if (displayString.second) {
+        Element::checkEnumerationDisplayString(displayString.first, typeName);
+      }
     }
   }
 
@@ -1158,9 +1170,6 @@ void Element::handleOMSElementDoubleClick()
   if (mpLibraryTreeItem && mpLibraryTreeItem->getOMSBusConnector()) {
     AddBusDialog *pAddBusDialog = new AddBusDialog(QList<Element*>(), mpLibraryTreeItem, mpGraphicsView);
     pAddBusDialog->exec();
-  } else if (mpLibraryTreeItem && mpLibraryTreeItem->getOMSTLMBusConnector()) {
-    AddTLMBusDialog *pAddTLMBusDialog = new AddTLMBusDialog(QList<Element*>(), mpLibraryTreeItem, mpGraphicsView);
-    pAddTLMBusDialog->exec();
   } else if (mpLibraryTreeItem && (mpLibraryTreeItem->isSystemElement() || mpLibraryTreeItem->isComponentElement())) {
     showElementPropertiesDialog();
   }
@@ -1406,40 +1415,6 @@ void Element::drawOMSElement()
     pBusRectangleAnnotation->setFillColor(QColor(73, 151, 60));
     pBusRectangleAnnotation->setFillPattern(StringHandler::FillSolid);
     mShapesList.append(pBusRectangleAnnotation);
-  } else if (mpLibraryTreeItem->getOMSTLMBusConnector()) { // if component is a tlm bus
-    RectangleAnnotation *pTLMBusRectangleAnnotation = new RectangleAnnotation(this);
-    QVector<QPointF> extents;
-    extents << QPointF(-100, -100) << QPointF(100, 100);
-    pTLMBusRectangleAnnotation->setExtents(extents);
-    switch (mpLibraryTreeItem->getOMSTLMBusConnector()->domain) {
-      case oms_tlm_domain_input:
-        pTLMBusRectangleAnnotation->setLineColor(QColor(0, 0, 127));
-        pTLMBusRectangleAnnotation->setFillColor(QColor(0, 0, 127));
-        break;
-      case oms_tlm_domain_output:
-        pTLMBusRectangleAnnotation->setLineColor(QColor(0, 0, 127));
-        pTLMBusRectangleAnnotation->setFillColor(QColor(255, 255, 255));
-        break;
-      case oms_tlm_domain_rotational:
-        pTLMBusRectangleAnnotation->setLineColor(QColor(100, 255, 255));
-        pTLMBusRectangleAnnotation->setFillColor(QColor(100, 255, 255));
-        break;
-      case oms_tlm_domain_hydraulic:
-        pTLMBusRectangleAnnotation->setLineColor(QColor(100, 255, 100));
-        pTLMBusRectangleAnnotation->setFillColor(QColor(100, 255, 100));
-        break;
-      case oms_tlm_domain_electric:
-        pTLMBusRectangleAnnotation->setLineColor(QColor(255, 255, 100));
-        pTLMBusRectangleAnnotation->setFillColor(QColor(255, 255, 100));
-        break;
-      case oms_tlm_domain_mechanical:
-      default:
-        pTLMBusRectangleAnnotation->setLineColor(QColor(100, 100, 255));
-        pTLMBusRectangleAnnotation->setFillColor(QColor(100, 100, 255));
-        break;
-    }
-    pTLMBusRectangleAnnotation->setFillPattern(StringHandler::FillSolid);
-    mShapesList.append(pTLMBusRectangleAnnotation);
   }
 }
 
@@ -1530,11 +1505,11 @@ void Element::createClassShapes()
     // Always use the IconMap here. Only IconMap makes sense for drawing icons of Element.
     if (!(pExtendModel && !pExtendModel->getIconDiagramMapPrimitivesVisible(true))) {
       /* issue #12074
-       * Use mpModelComponent->getModel()->isConnector() here instead of mpModel->isConnector()
+       * Use mpModelComponent->isConnector() here instead of mpModel->isConnector()
        * So when called for extends we use the top level element restriction.
        * We use the same mpModelComponent for top level and extends elements. See Element constructor above for extends element type.
        */
-      if (mpModelComponent && mpModelComponent->getModel()->isConnector() && mpGraphicsView->isDiagramView() && canUseDiagramAnnotation()) {
+      if (mpModelComponent && mpModelComponent->isConnector() && mpGraphicsView->isDiagramView() && canUseDiagramAnnotation()) {
         shapes = mpModel->getAnnotation()->getDiagramAnnotation()->getGraphics();
       } else {
         shapes = mpModel->getAnnotation()->getIconAnnotation()->getGraphics();
@@ -1607,9 +1582,6 @@ void Element::createResizerItems()
   bool isOMSBusConnecor = (mpLibraryTreeItem
                            && mpLibraryTreeItem->isSSP()
                            && mpLibraryTreeItem->getOMSBusConnector());
-  bool isOMSTLMBusConnecor = (mpLibraryTreeItem
-                              && mpLibraryTreeItem->isSSP()
-                              && mpLibraryTreeItem->getOMSTLMBusConnector());
   qreal x1, y1, x2, y2;
   getResizerItemsPositions(&x1, &y1, &x2, &y2);
   //Bottom left resizer
@@ -1620,7 +1592,7 @@ void Element::createResizerItems()
   connect(mpBottomLeftResizerItem, SIGNAL(resizerItemMoved(QPointF)), SLOT(resizeElement(QPointF)));
   connect(mpBottomLeftResizerItem, SIGNAL(resizerItemReleased()), SLOT(finishResizeElement()));
   connect(mpBottomLeftResizerItem, SIGNAL(resizerItemPositionChanged()), SLOT(resizedElement()));
-  mpBottomLeftResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor || isOMSTLMBusConnecor);
+  mpBottomLeftResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor);
   //Top left resizer
   mpTopLeftResizerItem = new ResizerItem(this);
   mpTopLeftResizerItem->setPos(x1, y2);
@@ -1629,7 +1601,7 @@ void Element::createResizerItems()
   connect(mpTopLeftResizerItem, SIGNAL(resizerItemMoved(QPointF)), SLOT(resizeElement(QPointF)));
   connect(mpTopLeftResizerItem, SIGNAL(resizerItemReleased()), SLOT(finishResizeElement()));
   connect(mpTopLeftResizerItem, SIGNAL(resizerItemPositionChanged()), SLOT(resizedElement()));
-  mpTopLeftResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor || isOMSTLMBusConnecor);
+  mpTopLeftResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor);
   //Top Right resizer
   mpTopRightResizerItem = new ResizerItem(this);
   mpTopRightResizerItem->setPos(x2, y2);
@@ -1638,7 +1610,7 @@ void Element::createResizerItems()
   connect(mpTopRightResizerItem, SIGNAL(resizerItemMoved(QPointF)), SLOT(resizeElement(QPointF)));
   connect(mpTopRightResizerItem, SIGNAL(resizerItemReleased()), SLOT(finishResizeElement()));
   connect(mpTopRightResizerItem, SIGNAL(resizerItemPositionChanged()), SLOT(resizedElement()));
-  mpTopRightResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor || isOMSTLMBusConnecor);
+  mpTopRightResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor);
   //Bottom Right resizer
   mpBottomRightResizerItem = new ResizerItem(this);
   mpBottomRightResizerItem->setPos(x2, y1);
@@ -1647,7 +1619,7 @@ void Element::createResizerItems()
   connect(mpBottomRightResizerItem, SIGNAL(resizerItemMoved(QPointF)), SLOT(resizeElement(QPointF)));
   connect(mpBottomRightResizerItem, SIGNAL(resizerItemReleased()), SLOT(finishResizeElement()));
   connect(mpBottomRightResizerItem, SIGNAL(resizerItemPositionChanged()), SLOT(resizedElement()));
-  mpBottomRightResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor || isOMSTLMBusConnecor);
+  mpBottomRightResizerItem->blockSignals(isSystemLibrary || isElementMode || isInheritedElement() || isOMSConnector || isOMSBusConnecor);
 }
 
 void Element::getResizerItemsPositions(qreal *x1, qreal *y1, qreal *x2, qreal *y2)
@@ -1844,8 +1816,7 @@ void Element::updatePlacementAnnotation()
       elementGeometry.rotation = mTransformation.getRotateAngle();
       OMSProxy::instance()->setElementGeometry(mpLibraryTreeItem->getNameStructure(), &elementGeometry);
     } else if (mpLibraryTreeItem && (mpLibraryTreeItem->getOMSConnector()
-                                     || mpLibraryTreeItem->getOMSBusConnector()
-                                     || mpLibraryTreeItem->getOMSTLMBusConnector())) {
+                                     || mpLibraryTreeItem->getOMSBusConnector())) {
       ssd_connector_geometry_t connectorGeometry;
       connectorGeometry.x = Utilities::mapToCoordinateSystem(mTransformation.getOrigin().x(), -100, 100, 0, 1);
       connectorGeometry.y = Utilities::mapToCoordinateSystem(mTransformation.getOrigin().y(), -100, 100, 0, 1);
@@ -1853,8 +1824,6 @@ void Element::updatePlacementAnnotation()
         OMSProxy::instance()->setConnectorGeometry(mpLibraryTreeItem->getNameStructure(), &connectorGeometry);
       } else if (mpLibraryTreeItem->getOMSBusConnector()) {
         OMSProxy::instance()->setBusGeometry(mpLibraryTreeItem->getNameStructure(), &connectorGeometry);
-      } else if (mpLibraryTreeItem->getOMSTLMBusConnector()) {
-        OMSProxy::instance()->setTLMBusGeometry(mpLibraryTreeItem->getNameStructure(), &connectorGeometry);
       }
       /* We have connector both on icon and diagram layer.
        * If one connector is updated then update the other connector automatically.

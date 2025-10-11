@@ -249,7 +249,7 @@ case FUNCTIONCODE(makefileParams=MAKEFILE_PARAMS(__)) then
   LINK=<%makefileParams.linker%>
   EXEEXT=<%makefileParams.exeext%>
   DLLEXT=<%makefileParams.dllext%>
-  DEBUG_FLAGS=<% if boolOr(acceptMetaModelicaGrammar(), Flags.isSet(Flags.GEN_DEBUG_SYMBOLS)) then " -g" else "$(SIM_OR_DYNLOAD_OPT_LEVEL)" %>
+  DEBUG_FLAGS=<% if Flags.isSet(Flags.GEN_DEBUG_SYMBOLS) then " -g" else "$(SIM_OR_DYNLOAD_OPT_LEVEL)" %>
   CFLAGS= $(DEBUG_FLAGS) <%makefileParams.cflags%>
   CPPFLAGS= <%makefileParams.includes ; separator=" "%> -I"<%makefileParams.omhome%>/include/omc/c" -I"<%makefileParams.omhome%>/include/omc" <%
     if Flags.isSet(Flags.OMC_RELOCATABLE_FUNCTIONS) then " -DOMC_GENERATE_RELOCATABLE_CODE"
@@ -3844,6 +3844,19 @@ template literalExpConst(Exp lit, Integer litindex) "These should all be declare
   let meta = 'static modelica_metatype const <%name%>'
 
   match lit
+  case RECORD(__) then
+    let &preExp = buffer ""
+    let &varDecls = buffer ""
+    let &auxFunction = buffer ""
+    let elements = (exps |> e => daeExp(e, contextOther, &preExp, &varDecls, &auxFunction);separator=", ")
+    <<
+    #if (defined(__clang__)  && __clang_major__ >= 17) || (defined(__GNUC__) && __GNUC__ >= 8)
+    static const <%expTypeFlag(ty, 2)%> <%name%> = {<%elements%>};
+    #else
+    /* handle joke compilers */
+    #define <%name%> (<%expTypeFlag(ty, 2)%>){<%elements%>}
+    #endif
+    >>
   case SCONST(__) then
     let escstr = Util.escapeModelicaStringToCString(string)
       /* TODO: Change this when OMC takes constant input arguments (so we cannot write to them)
@@ -3860,23 +3873,32 @@ template literalExpConst(Exp lit, Integer litindex) "These should all be declare
   case lit as MATRIX(ty=ty as T_ARRAY(__))
   case lit as ARRAY(ty=ty as T_ARRAY(__)) then
     let ndim = listLength(getDimensionSizes(ty))
-    let sty = expTypeShort(ty)
     let dims = (getDimensionSizes(ty) |> dim => dim ;separator=", ")
     let data = flattenArrayExpToList(lit) |> exp => literalExpConstArrayVal(exp) ; separator=", "
     <<
     static _index_t <%name%>_dims[<%ndim%>] = {<%dims%>};
     <% match data case "" then
     <<
+    #if (defined(__clang__)  && __clang_major__ >= 17) || (defined(__GNUC__) && __GNUC__ >= 8)
     static base_array_t const <%name%> = {
       <%ndim%>, <%name%>_dims, (void*) 0, (modelica_boolean) 0
     };
+    #else
+    /* handle joke compilers */
+    #define <%name%> (base_array_t){<%ndim%>, <%name%>_dims, (void*) 0, (modelica_boolean) 0}
+    #endif
     >>
     else
     <<
-    static const modelica_<%sty%> <%name%>_data[] = {<%data%>};
-    static <%sty%>_array const <%name%> = {
+    static const <%expTypeFlag(ty, 2)%> <%name%>_data[] = {<%data%>};
+    #if (defined(__clang__)  && __clang_major__ >= 17) || (defined(__GNUC__) && __GNUC__ >= 8)
+    static <%expTypeFlag(ty, 4)%> const <%name%> = {
       <%ndim%>, <%name%>_dims, (void*) <%name%>_data, (modelica_boolean) 0
     };
+    #else
+    /* handle joke compilers */
+    #define <%name%> (base_array_t){<%ndim%>, <%name%>_dims, (void*) <%name%>_data, (modelica_boolean) 0}
+    #endif
     >>
     %>
     >>
@@ -3983,11 +4005,12 @@ end literalExpConstBoxedValPreLit;
 template literalExpConstArrayVal(Exp lit)
 ::=
   match lit
+    case SCONST(__) then '"<%Util.escapeModelicaStringToCString(string)%>"'
     case ICONST(__) then integer
-    case lit as BCONST(__) then boolStrC(lit.bool)
+    case BCONST(__) then boolStrC(bool)
     case RCONST(__) then real
     case ENUM_LITERAL(__) then index
-    case lit as SHARED_LITERAL(__) then '_OMC_LIT<%lit.index%>'
+    case SHARED_LITERAL(__) then '_OMC_LIT<%index%>'
     else error(sourceInfo(), 'literalExpConstArrayVal failed: <%ExpressionDumpTpl.dumpExp(lit,"\"")%>')
 end literalExpConstArrayVal;
 
@@ -4801,19 +4824,6 @@ end contextIteratorName;
   else crefToCStr(cr, 0, false, false, &sub)
 end cref;
 
-/* public */ template crefOrStartCref(ComponentRef cr, Context context, Text &preExp, Text &varDecls, Text &auxFunction)
- "Only during intialization and if the start expression cannot be
-  evaluated to a constant use the full expression. Otherwise return the
-  cref itself. Used to resolve Ticket: #5807"
-::=
-let &sub = buffer ""
-  match cref2simvar(cr, getSimCode())
-  case SIMVAR(initialValue = SOME(startExp)) then
-    if boolNot(Expression.isConst(startExp)) then daeExp(startExp, context, &preExp, &varDecls, &auxFunction)
-    else cref(cr, &sub)
-  else cref(cr, &sub)
-end crefOrStartCref;
-
 /* public */ template crefOld(ComponentRef cr, Integer ix)
  "Generates C equivalent name for component reference.
   used in Compiler/Template/CodegenFMU.tpl"
@@ -4973,7 +4983,7 @@ template modelicaLine(builtin.SourceInfo info)
 ::=
   match info
   case SOURCEINFO(fileName="") then ""
-  else if boolOr(acceptMetaModelicaGrammar(), Flags.isSet(Flags.GEN_DEBUG_SYMBOLS))
+  else if Flags.isSet(Flags.GEN_DEBUG_SYMBOLS)
     then (if Flags.isSet(OMC_RECORD_ALLOC_WORDS)
     then '/*#modelicaLine <%infoStr(info)%>*/<%\n%><% match info case SOURCEINFO() then (if intEq(-1, stringFind(fileName,".interface.mo")) then 'mmc_set_current_pos("<%infoStr(info)%>");<%\n%>') %>'
     else '/*#modelicaLine <%infoStr(info)%>*/<%\n%>'
@@ -4982,7 +4992,7 @@ end modelicaLine;
 
 template endModelicaLine()
 ::=
-  if boolOr(acceptMetaModelicaGrammar(), Flags.isSet(Flags.GEN_DEBUG_SYMBOLS)) then '/*#endModelicaLine*/<%\n%>'
+  if Flags.isSet(Flags.GEN_DEBUG_SYMBOLS) then '/*#endModelicaLine*/<%\n%>'
 end endModelicaLine;
 
 template tempDecl(String ty, Text &varDecls)
@@ -7133,7 +7143,7 @@ template daeExpRsub(Exp inExp, Context context, Text &preExp,
     let res = daeExp(exp, context, &preExp, &varDecls, &auxFunction)
     let offset = intAdd(ix,1) // 1-based
     '(MMC_FETCH(MMC_OFFSET(MMC_UNTAGPTR(<%res%>), <%offset%>)))'
-  case RSUB(__) then
+  else
     error(sourceInfo(), '<%ExpressionDumpTpl.dumpExp(inExp,"\"")%>: failed')
 end daeExpRsub;
 
@@ -7207,8 +7217,11 @@ template daeExpAsub(Exp inExp, Context context, Text &preExp,
     match Expression.typeof(inExp)
     case T_ARRAY(__) then
       error(sourceInfo(),'ASUB non-scalar <%ExpressionDumpTpl.dumpExp(inExp,"\"")%>. The inner exp has type: <%unparseType(Expression.typeof(e))%>. After ASUB it is still an array: <%unparseType(Expression.typeof(inExp))%>.')
+    case T_COMPLEX(complexClassType = ClassInf.RECORD(__)) then
+      let expIndexes = (indexes |> index => daeSubscriptExp(index, context, &preExp, &varDecls, &auxFunction) ;separator=", ")
+      '<%typeShort%>_array_get(<%exp%>, <%listLength(indexes)%>, <%expIndexes%>)'
     else
-      let expIndexes = (indexes |> index => '<%daeExpASubIndex(index, context, &preExp, &varDecls, &auxFunction)%>' ;separator=", ")
+      let expIndexes = (indexes |> index => daeExpASubIndex(index, context, &preExp, &varDecls, &auxFunction) ;separator=", ")
       '<%typeShort%>_get<%match listLength(indexes) case 1 then "" case i then '_<%i%>D'%>(<%exp%>, <%expIndexes%>)'
 
   else
@@ -7845,7 +7858,9 @@ template varArrayNameValues(SimVar var, Integer ix, Boolean isPre, Boolean isSta
           '<%daeExpSimpleLiteral(value)%><%c_comment%>'
         case SIMVAR(varKind=PARAM())
         case SIMVAR(varKind=OPT_TGRID()) then
-          '(<%arr%>data->simulationInfo-><%crefShortType(name)%>Parameter[<%index%>]<%crefCCommentWithVariability(var)%>)<%&sub%>'
+          let c_comment = CodegenUtil.crefCCommentWithVariability(var)
+          let ty = crefShortType(name)
+          '(<%arr%>data->simulationInfo-><%crefShortType(name)%>Parameter[data->simulationInfo-><%ty%>ParamsIndex[<%index%>]]<%c_comment%>)<%&sub%>'
         case SIMVAR(varKind=EXTOBJ()) then
           '(<%arr%>data->simulationInfo->extObjs[<%index%>])<%&sub%>'
         case SIMVAR(__) then

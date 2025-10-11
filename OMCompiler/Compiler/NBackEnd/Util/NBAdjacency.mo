@@ -210,7 +210,6 @@ public
           Subscript sub;
           list<list<Subscript>> subs_lst;
           list<Integer> slice = {}, dim_sizes, values;
-          list<tuple<Integer, Integer>> ranges;
 
         // no subscripts -> create full index list
         case {} then subscriptedIndices(start, length, {});
@@ -230,8 +229,7 @@ public
           dim_sizes := list(Dimension.size(dim) for dim in dims);
           for sub_lst in listReverse(subs_lst) loop
             values  := list(Subscript.toInteger(s) for s in sub_lst);
-            ranges  := List.zip(dim_sizes, values);
-            slice   := Slice.locationToIndex(ranges, start) :: slice;
+            slice   := Slice.locationToIndex(dim_sizes, values, start) :: slice;
           end for;
         then slice;
 
@@ -302,7 +300,7 @@ public
 
     function hash
       input Mode mode;
-      output Integer hash = stringHashDjb2(toString(mode));
+      output Integer hash = ComponentRef.hash(mode.eqn_name);
     end hash;
 
     function isEqual
@@ -346,7 +344,12 @@ public
 
     function keyHash
       input Key key;
-      output Integer hash = stringHashDjb2(keyString(key));
+      output Integer hash;
+    protected
+      Integer e,v;
+    algorithm
+      (e,v) := key;
+      hash := e * 31 + v;
     end keyHash;
 
     function keyEqual
@@ -1241,11 +1244,11 @@ public
       end kindString;
       String str1, str2;
     algorithm
-      str1 := List.toString(arrayList(dep.skips), function List.toString(
+      str1 := Array.toString(dep.skips, function List.toString(
         inPrintFunc   = intString,
-        inListNameStr = "",
+        inNameStr     = "",
         inBeginStr    = "{",
-        inDelimitStr   = ", ",
+        inDelimitStr  = ", ",
         inEndStr      = "}",
         inPrintEmpty  = false,
         maxLength     = 0), "", "", ", ", "");
@@ -1426,7 +1429,7 @@ public
           local
             array<list<Integer>> skips;
             list<Kind> kinds;
-          case DEPENDENCY(skips = skips) guard(not listEmpty(List.flatten(arrayList(skips))))
+          case DEPENDENCY(skips = skips) guard(not Array.all(skips, listEmpty))
             algorithm K := cref :: K; then ();
           case DEPENDENCY(kinds = {}) guard(repeats)
             algorithm E := cref :: E; then ();
@@ -1705,10 +1708,11 @@ public
         set := UnorderedSet.union_list(sets, ComponentRef.hash, ComponentRef.isEqual);
       then set;
 
-      // reduce the dependency for these
+      // reduce the dependency and remove skips for these
       case Expression.SUBSCRIPTED_EXP() algorithm
         set := collectDependencies(exp.exp, depth, map, dep_map, sol_map, rep_set);
         Dependency.updateList(UnorderedSet.toList(set), listLength(exp.subscripts), true, dep_map);
+        Dependency.removeSkipsList(UnorderedSet.toList(set), dep_map);
       then set;
 
       // should not change anything

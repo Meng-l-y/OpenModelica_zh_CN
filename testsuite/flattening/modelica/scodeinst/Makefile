@@ -317,6 +317,8 @@ ConnectStream1.mo \
 ConstantConnector1.mo \
 ConstantConnector2.mo \
 ConstantConnector3.mo \
+ConstantMissingBinding1.mo \
+ConstantMissingBinding2.mo \
 const1.mo \
 const10.mo \
 const11.mo \
@@ -372,6 +374,7 @@ DimUnknown13.mo \
 DimUnknown14.mo \
 DimUnknown15.mo \
 DimUnknown16.mo \
+DimUnknown17.mo \
 dim1.mo \
 dim13.mo \
 dim16.mo \
@@ -707,6 +710,7 @@ FunctionRecordArg2.mo \
 FunctionRecordArg3.mo \
 FunctionRecordArg4.mo \
 FunctionRecordArg5.mo \
+FunctionRecordArg6.mo \
 FunctionRecursive1.mo \
 FunctionRecursive2.mo \
 FunctionSections1.mo \
@@ -834,6 +838,7 @@ InnerOuterReplaceable3.mo \
 InstanceRestriction1.mo \
 InstanceRestriction2.mo \
 InStreamArray.mo \
+InStreamArray2.mo \
 InStreamFlowThreshold.mo \
 InStreamInsideOutside.mo \
 InStreamNominalThreshold.mo \
@@ -942,6 +947,7 @@ OperatorOverloadBinaryAmbiguousTwoRecords.mo \
 OperatorOverloadBinaryWithBuiltin.mo \
 OperatorOverloadComplex.mo \
 OperatorOverloadConstructor1.mo \
+OperatorOverloadConstructor2.mo \
 OperatorOverloadConstructorDefault1.mo \
 OperatorOverloadConstructorDefault2.mo \
 OperatorOverloadConstructorHideDefault.mo \
@@ -1010,6 +1016,7 @@ RecordBinding14.mo \
 RecordBinding15.mo \
 RecordBinding16.mo \
 RecordBinding17.mo \
+RecordBinding18.mo \
 RecordConstructor1.mo \
 RecordConstructor2.mo \
 RecordConstructor3.mo \
@@ -1184,6 +1191,7 @@ UnboundParameter3.mo \
 UnboundParameter4.mo \
 UnboundParameter5.mo \
 UnboundParameter6.mo \
+UnboundParameter7.mo \
 usertype1.mo \
 usertype2.mo \
 usertype3.mo \
@@ -1195,6 +1203,7 @@ VectorizeBindings2.mo \
 VectorizeBindings3.mo \
 VectorizeBindings4.mo \
 VectorizeBindings5.mo \
+VectorizeBindings6.mo \
 VectorTest.mo \
 Visibility1.mo \
 Visibility2.mo \

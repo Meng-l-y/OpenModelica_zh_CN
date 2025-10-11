@@ -4866,13 +4866,10 @@ public function replaceExp
   input DAE.Exp inExp;
   input DAE.Exp inSourceExp;
   input DAE.Exp inTargetExp;
-  output tuple<DAE.Exp,Integer> out;
-protected
-  DAE.Exp exp;
-  Integer i;
+  output DAE.Exp exp;
+  output Integer i;
 algorithm
   (exp,(_,_,i)) := traverseExpTopDown(inExp,replaceExpWork,(inSourceExp,inTargetExp,0));
-  out := (exp,i);
 end replaceExp;
 
 protected function replaceExpWork
@@ -4954,7 +4951,7 @@ algorithm
     then true;
 
     case (DAE.ARRAY(array=array))
-    then List.mapBoolOr(array, containsInitialCall);
+    then List.any(array, containsInitialCall);
 
     else false;
   end match;
@@ -6189,17 +6186,15 @@ end traversingComponentRefFinderDerPreStart;
 public function extractUniqueCrefsFromStatmentS
   "authot mahge: Extracts all unique ComponentRef from Statments."
   input list<DAE.Statement> inStmts;
-  output tuple<list<DAE.ComponentRef>,list<DAE.ComponentRef>> ocrefs;
+  output list<DAE.ComponentRef> olhscrefs;
+  output list<DAE.ComponentRef> orhscrefs;
 protected
   list<list<DAE.ComponentRef>> lhscreflstlst;
   list<list<DAE.ComponentRef>> rhscreflstlst;
-  list<DAE.ComponentRef> orhscrefs;
-  list<DAE.ComponentRef> olhscrefs;
 algorithm
   (lhscreflstlst,rhscreflstlst) := List.map_2(inStmts,extractCrefsStatment);
   orhscrefs := ComponentReference.uniqueList(List.flatten(rhscreflstlst));
   olhscrefs := ComponentReference.uniqueList(List.flatten(lhscreflstlst));
-  ocrefs := (olhscrefs,orhscrefs);
 end extractUniqueCrefsFromStatmentS;
 
 
@@ -7651,10 +7646,10 @@ algorithm
      then isZero(e);
 
     case (DAE.ARRAY(array = ae))
-     then List.mapAllValueBool(ae,isZero,true);
+     then List.all(ae, isZero);
 
     case (DAE.MATRIX(matrix = matrix))
-     then List.mapListAllValueBool(matrix,isZero,true);
+     then List.all(matrix, function List.all(inFunc = isZero));
 
     case (DAE.UNARY(DAE.UMINUS_ARR(_),e))
      then isZero(e);
@@ -7698,10 +7693,10 @@ algorithm
      then isZeroOrAlmostZero(e, nominal);
 
     case (DAE.ARRAY(array = ae),_)
-     then List.mapAllValueBool(ae, function isZeroOrAlmostZero(nominal = nominal), true);
+     then List.all(ae, function isZeroOrAlmostZero(nominal = nominal));
 
     case (DAE.MATRIX(matrix = matrix),_)
-      then List.mapListAllValueBool(matrix, function isZeroOrAlmostZero(nominal = nominal), true);
+      then List.all(matrix, function List.all(inFunc = function isZeroOrAlmostZero(nominal = nominal)));
 
     case (DAE.UNARY(DAE.UMINUS_ARR(_),e),_)
      then isZeroOrAlmostZero(e, nominal);
@@ -8736,7 +8731,7 @@ algorithm
     // partial evaluation
     case (DAE.PARTEVALFUNCTION(expList = elst)) // stefan
       then
-        List.mapBoolOr(elst,containVectorFunctioncall);
+        List.any(elst,containVectorFunctioncall);
 
     // binary operators, e1 has a vector function call
     case (DAE.BINARY(exp1 = e1)) guard containVectorFunctioncall(e1)
@@ -8785,12 +8780,12 @@ algorithm
     // arrays
     case (DAE.ARRAY(array = elst))
       then
-        List.mapBoolOr(elst, containVectorFunctioncall);
+        List.any(elst, containVectorFunctioncall);
     // matrices
     case (DAE.MATRIX(matrix = explst))
       equation
         flatexplst = List.flatten(explst);
-        res = List.mapBoolOr(flatexplst, containVectorFunctioncall);
+        res = List.any(flatexplst, containVectorFunctioncall);
       then
         res;
     // ranges [e1:step:e2], where e1 is a vector call
@@ -8808,7 +8803,7 @@ algorithm
     // tuples return true all the time???!! adrpo: FIXME! TODO! is this really true?
     case (DAE.TUPLE(PR = elst))
       then
-        List.mapBoolOr(elst, containVectorFunctioncall);
+        List.any(elst, containVectorFunctioncall);
     // cast
     case (DAE.CAST(exp = e))
       then
@@ -8857,7 +8852,7 @@ algorithm
     // partial evaluation functions
     case (DAE.PARTEVALFUNCTION(expList = elst)) // stefan
       equation
-        res = List.mapBoolOr(elst,containFunctioncall);
+        res = List.any(elst,containFunctioncall);
       then
         res;
 
@@ -8914,13 +8909,13 @@ algorithm
     // arrays
     case (DAE.ARRAY(array = elst))
       then
-        List.mapBoolOr(elst, containFunctioncall);
+        List.any(elst, containFunctioncall);
 
     // matrix
     case (DAE.MATRIX(matrix = explst))
       equation
         flatexplst = List.flatten(explst);
-        res = List.mapBoolOr(flatexplst, containFunctioncall);
+        res = List.any(flatexplst, containFunctioncall);
       then
         res;
 
@@ -8940,7 +8935,7 @@ algorithm
     // tuples return true all the time???!! adrpo: FIXME! TODO! is this really true?
     case (DAE.TUPLE(PR = elst))
       then
-        List.mapBoolOr(elst, containVectorFunctioncall);
+        List.any(elst, containVectorFunctioncall);
 
     // cast
     case (DAE.CAST(exp = e))
@@ -9660,7 +9655,7 @@ end expStructuralEqualListLst;
 public function expContainsList
   input list<DAE.Exp> expl;
   input DAE.Exp exp;
-  output Boolean contains = List.map1BoolOr(expl, expContains, exp);
+  output Boolean contains = List.any(expl, function expContains(inExp2 = exp));
 end expContainsList;
 
 public function expContains
@@ -9698,7 +9693,7 @@ algorithm
     case (DAE.ENUM_LITERAL(), _) then false;
 
     case (DAE.ARRAY(array=expLst), _) then expContainsList(expLst, inExp2);
-    case (DAE.MATRIX(matrix=expl), _) then List.map1ListBoolOr(expl, expContains, inExp2);
+    case (DAE.MATRIX(matrix=expl), _) then List.any(expl, function List.any(inFunc = function expContains(inExp2 = inExp2)));
 
     case (DAE.CREF(componentRef=cr1), DAE.CREF(componentRef=cr2)) equation
       res = ComponentReference.crefEqual(cr1, cr2);
@@ -10051,7 +10046,7 @@ public function dimensionsKnownAndNonZero
   input list<DAE.Dimension> dims;
   output Boolean allKnown;
 algorithm
-  allKnown := List.mapBoolAnd(dims, dimensionKnownAndNonZero);
+  allKnown := List.all(dims, dimensionKnownAndNonZero);
 end dimensionsKnownAndNonZero;
 
 public function dimensionUnknownOrExp
@@ -10080,7 +10075,7 @@ public function hasUnknownDims
   input list<DAE.Dimension> dims;
   output Boolean hasUnkown;
 algorithm
-  hasUnkown := List.mapBoolOr(dims, dimensionUnknown);
+  hasUnkown := List.any(dims, dimensionUnknown);
 end hasUnknownDims;
 
 public function subscriptEqual
@@ -11771,7 +11766,7 @@ algorithm
   outValues := matchcontinue(inDims)
     case (_)
       equation
-        true = List.mapBoolAnd(inDims, checkDimensionSizes);
+        true = List.all(inDims, checkDimensionSizes);
         dims = List.map(inDims, dimensionSizeAll);
       then dims;
     else {};
@@ -11808,7 +11803,7 @@ algorithm
   outValues := matchcontinue(inDims)
     case (_)
       equation
-        true = List.mapBoolAnd(inDims, checkExpDimensionSizes);
+        true = List.all(inDims, checkExpDimensionSizes);
         dims = List.map(inDims, expInt);
         then dims;
     else {};
@@ -11832,11 +11827,11 @@ algorithm
     case(head::_)
       equation
         //print("isCrefListWithEqualIdents: \n" + stringDelimitList(List.map1(iExpressions, ExpressionDump.dumpExpStr, 1), ""));
-        true = List.mapBoolAnd(iExpressions, isCref);
+        true = List.all(iExpressions, isCref);
         //print("isCrefListWithEqualIdents: all crefs!\n");
         crefs = List.map(iExpressions, expCref);
         headCref = expCref(head);
-        tmpCrefWithEqualIdents = List.map1BoolAnd(crefs, ComponentReference.crefEqualWithoutLastSubs, headCref);
+        tmpCrefWithEqualIdents = List.all(crefs, function ComponentReference.crefEqualWithoutLastSubs(cr2 = headCref));
         //print("isCrefListWithEqualIdents: returns " + boolString(tmpCrefWithEqualIdents) + "\n\n");
       then tmpCrefWithEqualIdents;
     case({})
@@ -13452,6 +13447,7 @@ end tupleHead;
 
 public function isSimpleLiteralValue "A value that requires nothing special during code generation. String literals are special and not included."
   input DAE.Exp exp;
+  input Boolean allow_arrays = false;
   output Boolean b;
 algorithm
   b := match exp
@@ -13459,6 +13455,7 @@ algorithm
     case DAE.RCONST() then true;
     case DAE.BCONST() then true;
     case DAE.ENUM_LITERAL() then true;
+    case DAE.ARRAY() guard(allow_arrays) then List.all(exp.array, function isSimpleLiteralValue(allow_arrays = true));
     else false;
   end match;
 end isSimpleLiteralValue;
